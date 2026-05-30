@@ -1005,7 +1005,21 @@ const cmdSpectrum = async (cmd: PymolCommand, env: any, registry: PymolRegistry)
     if (expr === "b" || expr === "b-factor") {
         const touched = new Set<MoorhenMolecule>();
         for (const { molecule, cid } of targets) {
+            // Add to the molecule-level default rules. Reps with
+            // useDefaultColourRules=true pick this up at redraw for free.
             molecule.addColourRule("b-factor-normalised", cid, "#888888", [cid], true);
+            // Symmetry fix for the inverse direction — same shape as cmdColor's
+            // smart push. After any prior `color X, sel` has flipped existing
+            // reps to useDefaultColourRules=false, those reps stop consulting
+            // the molecule defaults and a fresh `spectrum b` would silently
+            // miss them. Push the b-factor rule onto each custom rep whose
+            // cid plausibly shares atoms with the selection.
+            for (const rep of ((molecule.representations as moorhen.MoleculeRepresentation[]) || [])) {
+                const isCustom = !!(rep as any).colourRules && (rep as any).colourRules.length > 0 && !(rep as any).useDefaultColourRules;
+                if (!isCustom) continue;
+                if (!cidsOverlap((rep as any).cid || "", cid)) continue;
+                try { (rep as any).addColourRule?.("b-factor-normalised", cid, "#888888", [cid], true); } catch {}
+            }
             touched.add(molecule);
         }
         for (const molecule of touched) {
