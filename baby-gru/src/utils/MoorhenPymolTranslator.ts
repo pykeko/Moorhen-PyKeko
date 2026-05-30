@@ -567,8 +567,33 @@ const cmdShow = async (cmd: PymolCommand, env: any, registry: PymolRegistry) => 
     for (const { molecule, cid } of targets) {
         // Use molecule.show — find-or-create, keeps state consistent, no duplicate reps
         try {
+            // Moorhen's CRs (cartoon) representation can't take a compound
+            // `||`-joined cid — addRepresentation silently no-ops and
+            // molecule.show swallows the failure in its catch block. This
+            // hits any `show cartoon, <macro>` (the macro evaluator produces
+            // a long compound cid) — `show cartoon, polymer`, `show cartoon,
+            // chain A and not resi 100-200`, etc.
+            //
+            // Workaround: when the style is cartoon-style AND the resolved
+            // cid is compound, simplify to one rep per chain. Cartoon only
+            // renders polymer-able residues anyway, so widening from
+            // "exactly these residues" to "this whole chain's polymer" is a
+            // visually-faithful approximation for the common case
+            // (`show cartoon, polymer`, `show cartoon, polymer and chain A`).
+            const cartoonStyle = style === "CRs";
+            const compoundCid = cid.includes("||");
+            const usePerChain = cartoonStyle && compoundCid;
+            const chainCidList = usePerChain
+                ? [...cidChains(cid)].map(ch => `//${ch}`)
+                : [normalizeCidForMoorhen(cid)];
+
             const existingRepIds = new Set((molecule.representations as any[]).map(r => r.uniqueId));
-            const rep = await molecule.show(style, normalizeCidForMoorhen(cid));
+            let lastRep: any = null;
+            for (const cidToUse of chainCidList) {
+                const r = await molecule.show(style, cidToUse);
+                if (r) lastRep = r;
+            }
+            const rep = lastRep;
             const isFreshlyCreated = rep && !existingRepIds.has((rep as any).uniqueId);
 
             // PyMOL convention: `show <rep>` adopts whatever colours are already
@@ -677,6 +702,34 @@ const cmdAs = async (cmd: PymolCommand, env: any, registry: PymolRegistry) => {
     await cmdShow(cmd, env, registry);
 };
 
+// Extract chain identifiers from a Moorhen cid (e.g. `//A/1-10/*||//B/5/*` →
+// {"A","B"}). Used by the inverse-colour push to decide which reps actually
+// need a rule pushed — pushing to reps that target unrelated chains is wasted
+// work that piles redraw cost without changing what the user sees.
+const cidChains = (cid: string): Set<string> => {
+    const out = new Set<string>();
+    if (!cid) return out;
+    // Match `//<chain>` segments. Chain is everything between `//` and the next `/`.
+    for (const m of cid.matchAll(/\/\/([^\/|]+)/g)) {
+        const ch = m[1].trim();
+        // Skip wildcards — they mean "any chain" → all reps could overlap.
+        if (ch === "*" || ch === "") continue;
+        out.add(ch);
+    }
+    return out;
+};
+
+// True if two cids could share any atoms — used to gate the inverse-colour
+// push. Conservative: a `//*` (wildcard) on either side always overlaps.
+const cidsOverlap = (a: string, b: string): boolean => {
+    const ca = cidChains(a), cb = cidChains(b);
+    // If either cid has no extractable chain (e.g. `//*` or `/*/*/*/*`),
+    // assume overlap — it's a "whole molecule" rep that anything will touch.
+    if (ca.size === 0 || cb.size === 0) return true;
+    for (const c of ca) if (cb.has(c)) return true;
+    return false;
+};
+
 const cmdColor = async (cmd: PymolCommand, env: any, registry: PymolRegistry) => {
     const colorName = cmd.args[0];
     const selArg = cmd.args[1];
@@ -693,14 +746,16 @@ const cmdColor = async (cmd: PymolCommand, env: any, registry: PymolRegistry) =>
         // reps that haven't been individually coloured yet).
         molecule.addColourRule("cid", cid, hex, [cid, hex]);
         // INVERSE fix complementing cmdShow's forward inheritance: push the
-        // same rule onto every existing rep's own colourRules. PyMOL's atoms
-        // have one shared colour across reps; Moorhen's colour state is
-        // per-rep. Without this, a rep that's already flipped
-        // useDefaultColourRules=false (via prior addColourRule or
-        // inheritance) wouldn't update on a fresh `color ...` call.
-        // Each rule's own cid governs which atoms it tints, so adding a rule
-        // for `chain A` to a `chain B`-only rep is a visual no-op — safe.
+        // same rule onto reps that (a) have already gone "custom" so the
+        // molecule-level defaults no longer reach them, AND (b) plausibly
+        // share atoms with the targeted selection. The chain-overlap check
+        // keeps this O(reps-that-actually-care) instead of O(all-reps),
+        // which was triggering Coot worker-queue thrash and 120-second
+        // hangs in scenes with many reps.
         for (const rep of ((molecule.representations as moorhen.MoleculeRepresentation[]) || [])) {
+            const isCustom = !!(rep as any).colourRules && (rep as any).colourRules.length > 0 && !(rep as any).useDefaultColourRules;
+            if (!isCustom) continue;
+            if (!cidsOverlap((rep as any).cid || "", cid)) continue;
             try { (rep as any).addColourRule?.("cid", cid, hex, [cid, hex]); } catch { /* skip */ }
         }
         touched.add(molecule);
