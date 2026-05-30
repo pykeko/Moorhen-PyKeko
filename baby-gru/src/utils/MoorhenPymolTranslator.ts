@@ -605,7 +605,8 @@ const cmdShow = async (cmd: PymolCommand, env: any, registry: PymolRegistry) => 
             // rep on the molecule. Each rule's cid governs which atoms it
             // applies to, so copying rules with non-overlapping cids is safe.
             if (isFreshlyCreated && rep) {
-                const others = (molecule.representations as moorhen.MoleculeRepresentation[]).filter(r => r !== rep && r.colourRules && !((r as any).useDefaultColourRules) && r.colourRules.length > 0);
+                const allReps = molecule.representations as moorhen.MoleculeRepresentation[];
+                const others = allReps.filter(r => r !== rep && r.colourRules && !((r as any).useDefaultColourRules) && r.colourRules.length > 0);
                 let inherited = 0;
                 for (const r of others) {
                     for (const rule of r.colourRules) {
@@ -621,6 +622,23 @@ const cmdShow = async (cmd: PymolCommand, env: any, registry: PymolRegistry) => 
                         inherited++;
                     }
                 }
+
+                // Same pattern for opacity (`set surface_transparency`,
+                // `set cartoon_transparency`, `set transparency`). Per-rep
+                // `nonCustomOpacity` is the rep-level state PyMOL's atom-level
+                // alpha maps to; inherit it from a sibling rep of the same
+                // style if one is already non-default. First match wins —
+                // multiple distinct opacities on same-style siblings is rare
+                // and conflicting; picking one is better than ignoring all.
+                const sameStyleSibs = allReps.filter(r => r !== rep && r.style === (rep as any).style);
+                for (const sib of sameStyleSibs) {
+                    const op = (sib as any).nonCustomOpacity;
+                    if (typeof op === "number" && op < 0.99) {
+                        (rep as any).setNonCustomOpacity?.(op);
+                        break;
+                    }
+                }
+
                 if (inherited > 0) {
                     try { await (rep as any).redraw?.(); } catch { /* renderer may not be ready */ }
                 }
