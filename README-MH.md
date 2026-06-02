@@ -89,7 +89,7 @@ Multiple fixes for how the app handles dropped or imported `.cif` ligand diction
 
 ### 11. MVS portable-viewer export (File → Export portable viewer)
 
-PyKeko-only menu item. Saves the current scene as a self-contained Mol* HTML viewer (~3–10 MB) you can share, drop into a slide, or open in any browser without installing anything. Density maps included get cropped to a 20 Å cube around the camera target so the file stays compact.
+PyKeko-only menu item. Saves the current scene as a self-contained Mol* HTML viewer (~3–10 MB structures-only, ~10–30 MB with density) you can share, drop into a slide, or open in any browser without installing anything. When the scene has visible maps a confirm dialog pops first with a file-size estimate and an "Include density" checkbox. Maps get cropped to a 40 Å cube around the camera target — wider than the viewer's clip sphere so density can follow the camera.
 
 Faithful to what's on screen:
 
@@ -98,6 +98,7 @@ Faithful to what's on screen:
 - **CID selectors**: chain (`/mdl/chain`), residue, and `r1-r2` ranges round-trip through to MVS as `auth_asym_id` / `auth_seq_id` / `beg_auth_seq_id`-`end_auth_seq_id`.
 - **Density**: 2Fo-Fc as one isosurface, Fo-Fc as two (positive green / negative red), absolute contour preserved so the export shows the exact contour the user was looking at; the Mol* slider exposes a Relative/Absolute toggle so the viewer can switch.
 - **Camera**: capture target / position / up from Moorhen's view matrix.
+- **Camera-follow density** (pk-v0.2.4+): the bundled viewer adds a 20 Å sphere clip to every volume isosurface that tracks the camera target — when you pan, density follows like in Coot. Throttled to 80 ms so single drags update once. Implemented via Mol*'s `clip` GPU uniform (no re-mesh, essentially free). Density disappears at the embedded cube boundary, same way Coot's runs out at the loaded map's edge.
 
 The bundled Mol* viewer (`PyKeko/viewer-template`) is trimmed for the "show one scene" use case: left panel starts collapsed (icon column only), `Remote States` snapshot list removed, action picker filtered to just Open Files. A small chevron button at the top-right of the canvas toggles the right Structure Tools panel for more drawing area.
 

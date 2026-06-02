@@ -3,21 +3,30 @@
 // document, and hands it to the wrapper IPC which injects it into the
 // pre-built Mol* viewer template and writes a single self-contained .html
 // via the native Save panel. Renders nothing in the browser build.
+//
+// When the scene has visible density maps, we pop a confirm dialog first:
+// embedded maps balloon the HTML size, and not every export needs them
+// (e.g. sharing a figure for a slide). Default keeps maps in; the user
+// can uncheck to ship a structures-only file.
+import { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { Dialog, DialogTitle, DialogContent, DialogActions, Typography, Box, FormControlLabel, Checkbox } from "@mui/material";
 import { RootState, enqueueSnackbar } from "@/store";
 import { moorhen } from "../../types/moorhen";
 import { buildMvsJson, MvsMapInput } from "../../utils/MvsExportBuilder";
 import { cropCcp4 } from "../../utils/MvsCcp4Crop";
 import { captureCamera } from "../../utils/MvsCameraCapture";
 import { MoorhenMenuItem } from "../interface-base/MenuItems/MenuItem";
+import { MoorhenButton } from "../inputs";
 
-// Half-side (Å) of the density cube embedded in the portable viewer. Matches
-// Moorhen's default on-screen map radius, so what the recipient sees in the
-// standalone viewer is close to what was on screen at export time. Smaller =
-// faster viewer + smaller file; larger = density visible over a wider region
-// but the standalone viewer's isosurface mesh grows fast (a cubic relationship
-// with radius).
-const DENSITY_CUBE_HALF_SIDE_ANGSTROMS = 20;
+// Half-side (Å) of the density cube embedded in the portable viewer. We
+// embed a region wider than the on-screen "rolling sphere" so the viewer's
+// camera-follow clip (default 20 Å sphere — see App.tsx DENSITY_CLIP_RADIUS)
+// has room to wander before the user pans past the embedded data. ~2× the
+// clip radius is a reasonable balance: file grows ~8× vs the old 20 Å cube
+// (~250 KB → ~2 MB per map at typical 0.5 Å spacing) for ~2× wander room
+// in each direction.
+const DENSITY_CUBE_HALF_SIDE_ANGSTROMS = 40;
 
 const rgbToHex = (rgb: { r: number; g: number; b: number } | null | undefined): string | undefined => {
     if (!rgb) return undefined;
@@ -37,13 +46,37 @@ async function computeUnionCentroid(mols: moorhen.Molecule[]): Promise<[number, 
     return n > 0 ? [sx / n, sy / n, sz / n] : null;
 }
 
+// Cheap "what would this map cost in the HTML?" estimate. The cropped CCP4
+// is 4 bytes/voxel × (2 · halfSide / spacing)³, plus ~33% base64 overhead.
+// We use a typical 0.5 Å spacing as a stand-in (Moorhen-loaded maps don't
+// expose their grid spacing on the JS side without a round-trip).
+const estimateMapBytes = (halfSideAng: number, spacing = 0.5): number => {
+    const n = Math.max(1, Math.ceil((2 * halfSideAng) / spacing));
+    return Math.ceil(n * n * n * 4 * 1.34);  // 4 bytes float × 4/3 base64
+};
+const formatBytes = (b: number): string => {
+    if (b < 1024) return `${b} B`;
+    if (b < 1024 * 1024) return `${Math.round(b / 1024)} KB`;
+    return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 export const ExportMvsViewer = () => {
     const dispatch = useDispatch();
     const molecules = useSelector((state: RootState) => state.molecules.moleculeList) as moorhen.Molecule[];
     const maps = useSelector((state: RootState) => state.maps) as any as moorhen.Map[];
     const visibleMaps = useSelector((state: RootState) => state.mapContourSettings.visibleMaps);
 
-    const handleClick = async () => {
+    // Confirm-dialog state. Opens when the menu item fires AND the scene has
+    // visible maps; bypassed entirely for structure-only scenes (the dialog
+    // would add a click for no information gain).
+    const [confirmOpen, setConfirmOpen] = useState(false);
+    const [includeMaps, setIncludeMaps] = useState(true);
+
+    const visibleMapSet = new Set(visibleMaps || []);
+    const candidateMaps = (maps || []).filter(m => visibleMapSet.has(m.molNo));
+    const estimatedMapBytes = candidateMaps.length * estimateMapBytes(DENSITY_CUBE_HALF_SIDE_ANGSTROMS);
+
+    const handleClick = () => {
         const ctrl = (window as any).__moorhenControl;
         if (!ctrl?.exportMvsViewer) {
             dispatch(enqueueSnackbar({ message: "Portable viewer export is only available in the PyKeko desktop app", variant: "warning" }));
@@ -53,6 +86,21 @@ export const ExportMvsViewer = () => {
             dispatch(enqueueSnackbar({ message: "Load a structure first", variant: "warning" }));
             return;
         }
+        if (candidateMaps.length === 0) {
+            // No maps to ask about — go straight to save dialog.
+            void doExport(false);
+            return;
+        }
+        setIncludeMaps(true);  // re-arm default each time
+        setConfirmOpen(true);
+    };
+
+    const doExport = async (withMaps: boolean) => {
+        const ctrl = (window as any).__moorhenControl;
+        // ctrl + molecules already validated by handleClick; this method is
+        // also called directly from the dialog Save button after the same
+        // checks. Defensive re-check is cheap.
+        if (!ctrl?.exportMvsViewer || !molecules || molecules.length === 0) return;
         try {
             // --- Structures ---
             const mols = await Promise.all(molecules.map(async m => {
@@ -93,61 +141,59 @@ export const ExportMvsViewer = () => {
                 };
             }));
 
-            // --- Maps (visible only) ---
-            // Crop each map to a cube around the camera target (matches Moorhen's
-            // on-screen "sphere of density around the cursor" behaviour). Falls
-            // back to the molecule centroid if no camera is available. Cropping
-            // to a small cube (~20 Å half-side) keeps the embedded file small
-            // AND the standalone viewer responsive — the isosurface mesh for a
-            // whole-ASU's worth of density costs the viewer dearly.
+            // --- Maps (visible only, opt-in) ---
+            // Each map gets cropped to a cube around the camera target (matches
+            // Moorhen's on-screen "sphere of density around the cursor"
+            // behaviour). Falls back to molecule centroid if no camera state is
+            // available. Cropping to a small cube (~20 Å half-side) keeps the
+            // embedded file small AND the standalone viewer responsive —
+            // meshing a whole-ASU isosurface costs the viewer dearly.
             const cam = captureCamera();
-            const cropCenter: [number, number, number] | null = cam?.target
-                ?? (await computeUnionCentroid(molecules));
             const mapInputs: MvsMapInput[] = [];
             const skipped: string[] = [];
-            const visible = new Set(visibleMaps || []);
-            const candidateMaps = (maps || []).filter(m => visible.has(m.molNo));
+            if (withMaps && candidateMaps.length > 0) {
+                const cropCenter: [number, number, number] | null = cam?.target
+                    ?? (await computeUnionCentroid(molecules));
+                if (!cropCenter) {
+                    // Shouldn't happen given the molecule-loaded check; defensive.
+                    throw new Error("Cannot determine crop center (no camera + no molecules)");
+                }
+                for (const m of candidateMaps) {
+                    try {
+                        const mapReply: any = await m.getMap();
+                        const mapBuf: ArrayBuffer = mapReply?.data?.result?.mapData;
+                        if (!mapBuf) { skipped.push(`${m.name} (no data)`); continue; }
 
-            if (candidateMaps.length > 0 && !cropCenter) {
-                // Shouldn't happen given the molecule-loaded check above, but be defensive.
-                throw new Error("Cannot determine crop center (no camera + no molecules)");
-            }
+                        const cropped = cropCcp4(mapBuf, {
+                            centerXYZ: cropCenter,
+                            radiusAngstroms: DENSITY_CUBE_HALF_SIDE_ANGSTROMS,
+                        });
 
-            for (const m of candidateMaps) {
-                try {
-                    const mapReply: any = await m.getMap();
-                    const mapBuf: ArrayBuffer = mapReply?.data?.result?.mapData;
-                    if (!mapBuf) { skipped.push(`${m.name} (no data)`); continue; }
+                        const params = m.getMapContourParams();
+                        // contourLevel is in ABSOLUTE density units (Moorhen's
+                        // slider exposes σ but stores absolute, multiplying by
+                        // the map's RMSD under the hood). Pass straight through
+                        // as absolute_isovalue. For a map that was just loaded
+                        // and never UI-adjusted, the Redux entry is missing —
+                        // fall back to the map's own suggestedContourLevel (set
+                        // by Coot's auto-fit at load time) so the export still
+                        // matches what's on screen.
+                        const contourAbsolute: number | null = typeof params?.contourLevel === "number"
+                            ? params.contourLevel
+                            : (typeof m.suggestedContourLevel === "number" ? m.suggestedContourLevel : null);
 
-                    const cropped = cropCcp4(mapBuf, {
-                        centerXYZ: cropCenter!,
-                        radiusAngstroms: DENSITY_CUBE_HALF_SIDE_ANGSTROMS,
-                    });
-
-                    const params = m.getMapContourParams();
-                    // contourLevel is in ABSOLUTE density units (Moorhen's
-                    // slider exposes σ but stores absolute, multiplying by
-                    // the map's RMSD under the hood). Pass straight through
-                    // as absolute_isovalue. For a map that was just loaded
-                    // and never UI-adjusted, the Redux entry is missing —
-                    // fall back to the map's own suggestedContourLevel
-                    // (set by Coot's auto-fit at load time) so the export
-                    // still matches what's on screen.
-                    const contourAbsolute: number | null = typeof params?.contourLevel === "number"
-                        ? params.contourLevel
-                        : (typeof m.suggestedContourLevel === "number" ? m.suggestedContourLevel : null);
-
-                    mapInputs.push({
-                        name: m.name,
-                        bytes: cropped.bytes,
-                        isDifference: !!m.isDifference,
-                        contourAbsolute,
-                        color: rgbToHex(params?.mapColour as any) ?? "#3a86ff",
-                        positiveColor: rgbToHex(params?.positiveMapColour as any),
-                        negativeColor: rgbToHex(params?.negativeMapColour as any),
-                    });
-                } catch (e: any) {
-                    skipped.push(`${m.name} (${e?.message || e})`);
+                        mapInputs.push({
+                            name: m.name,
+                            bytes: cropped.bytes,
+                            isDifference: !!m.isDifference,
+                            contourAbsolute,
+                            color: rgbToHex(params?.mapColour as any) ?? "#3a86ff",
+                            positiveColor: rgbToHex(params?.positiveMapColour as any),
+                            negativeColor: rgbToHex(params?.negativeMapColour as any),
+                        });
+                    } catch (e: any) {
+                        skipped.push(`${m.name} (${e?.message || e})`);
+                    }
                 }
             }
 
@@ -180,9 +226,59 @@ export const ExportMvsViewer = () => {
     // and lacks the bundled viewer template).
     if (typeof window === "undefined" || !(window as any).__moorhenControl?.exportMvsViewer) return null;
 
+    const confirmAndExport = (withMaps: boolean) => {
+        setConfirmOpen(false);
+        void doExport(withMaps);
+    };
+
     return (
-        <MoorhenMenuItem onClick={handleClick}>
-            Export portable viewer (.html)…
-        </MoorhenMenuItem>
+        <>
+            <MoorhenMenuItem onClick={handleClick}>
+                Export portable viewer (.html)…
+            </MoorhenMenuItem>
+            <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)} maxWidth="sm" fullWidth>
+                <DialogTitle>Export portable viewer</DialogTitle>
+                <DialogContent>
+                    <Typography variant="body2" gutterBottom>
+                        {molecules.length} molecule{molecules.length === 1 ? "" : "s"}:
+                        {" "}{molecules.map(m => m.name).join(", ")}
+                    </Typography>
+                    <Typography variant="body2" gutterBottom>
+                        {candidateMaps.length} visible map{candidateMaps.length === 1 ? "" : "s"}:
+                        {" "}{candidateMaps.map(m => m.name).join(", ")}
+                    </Typography>
+                    <Box sx={{ mt: 2, p: 1.5, backgroundColor: "rgba(77,171,247,0.10)", borderRadius: 1 }}>
+                        <FormControlLabel
+                            control={
+                                <Checkbox
+                                    checked={includeMaps}
+                                    onChange={e => setIncludeMaps(e.target.checked)}
+                                />
+                            }
+                            label={
+                                <Typography variant="body2">
+                                    Include density map{candidateMaps.length === 1 ? "" : "s"}
+                                    {" "}<Typography component="span" variant="caption" color="text.secondary">
+                                        (≈ {formatBytes(estimatedMapBytes)} added to the HTML; cropped to a
+                                        {" "}{DENSITY_CUBE_HALF_SIDE_ANGSTROMS} Å cube around the current view)
+                                    </Typography>
+                                </Typography>
+                            }
+                        />
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5, ml: 4 }}>
+                            Unchecking ships structures only (much smaller file, no density).
+                        </Typography>
+                    </Box>
+                </DialogContent>
+                <DialogActions>
+                    <MoorhenButton variant="secondary" onClick={() => setConfirmOpen(false)}>
+                        Cancel
+                    </MoorhenButton>
+                    <MoorhenButton variant="primary" onClick={() => confirmAndExport(includeMaps)}>
+                        Save…
+                    </MoorhenButton>
+                </DialogActions>
+            </Dialog>
+        </>
     );
 };

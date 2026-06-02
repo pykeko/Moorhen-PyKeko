@@ -656,6 +656,37 @@ A general-purpose Mol\* viewer ships a lot of UI an exported scene doesn't need.
 
 A separate `pymol_to_molstar.py` script (lives in the user's workspace, not git-tracked) produces the same MVS-bundled HTML from inside a PyMOL session for users who want to share a PyMOL scene without going through Moorhen. Reuses the same `PyKeko/viewer-template` bundle. The standalone covers density-less scenes; for density export, PyKeko's path is the canonical one because Coot's grid handling is more robust than the static-crop fallback the standalone uses.
 
+### Camera-follow density (pk-v0.2.4)
+
+The first density export shipped in pk-v0.2.3 was a static iso-surface cropped to a 20 Å cube around the camera at export time — fine for a snapshot but visibly different from Coot's "rolling cube of density follows the cursor" UX. pk-v0.2.4 closes that gap.
+
+**Why this isn't expressible in MVS today:** Mol\* 4.18's MVS schema for `volume_representation` only takes `{relative_isovalue, absolute_isovalue, show_wireframe, show_faces}`. The geometric `clip` param available on the standalone `VolumeRepresentation3D` transformer (which compiles to GPU uniforms, no re-mesh on update) is not surfaced through MVS. We filed [molstar/molstar#1844](https://github.com/molstar/molstar/issues/1844) to ask for this; until it lands, we post-process the loaded state tree on our side.
+
+**Implementation** in [`PyKeko/viewer-template/src/App.tsx`](https://github.com/pykeko/PyKeko/blob/main/viewer-template/src/App.tsx#L67):
+
+```ts
+function wireCameraFollowDensity(plugin) {
+    const cells = plugin.state.data.selectQ(q =>
+        q.ofTransformer(StateTransforms.Representation.VolumeRepresentation3D));
+    if (!cells || cells.length === 0) return null;
+    const volumeRefs = cells.map(c => c.transform.ref);
+    // ...subscribe to camera.stateChanged, throttle 80ms, push a clip update
+    return plugin.canvas3d.camera.stateChanged
+        .pipe(throttleTime(80, undefined, { leading: true, trailing: true }))
+        .subscribe(state => void applyClipAt(state.target));
+}
+```
+
+The clip param lives inside `type.params.clip` on the volume rep cell — a `{variant: 'pixel', objects: [{type: 'sphere', position, scale: [r,r,r], ...}]}` structure consumed by `mol-util/clip.ts` and converted to shader uniforms in `mol-geo/geometry/base.ts`. Updating it triggers `createOrUpdate` on the rep, which detects clip is not a geometry-affecting prop and just refreshes uniforms — no isosurface re-mesh.
+
+**Coupled exporter change**: `ExportMvsViewer.tsx` bumps the embedded cube from 20 → 40 Å half-side. Density only exists within the embedded region; with the smaller cube the camera-follow effect was visible only over a few Å of pan. At 40 Å the user can wander ~20 Å in any direction (matching the clip sphere radius) before density runs out. File size cost: ~8× per map (cubic scaling). Mitigated by the new export-time include/skip modal.
+
+**Export confirmation modal**: when the scene has visible maps, `ExportMvsViewer.tsx` opens a small MUI `Dialog` listing molecules + maps + an estimated file size, with an "Include density map(s)" checkbox (default on). Unchecked → ships structures-only HTML (typically ~10× smaller). For structure-only scenes the modal is bypassed and we go straight to the save dialog.
+
+### PML bundle export — stubbed
+
+The `File → Save as PyMOL bundle (.pml)` menu item was hidden in pk-v0.2.3+. The `.pml` script produced didn't faithfully reproduce the live scene (a "complete disaster" per user); we left the bundle builder ([`MoorhenPymolSaveBundle.ts`](baby-gru/src/utils/MoorhenPymolSaveBundle.ts), ~290 lines) and the `pykeko:save-bundle` IPC handler in `PyKeko/main.js` in place so the work isn't lost — flip the early `return null` at the top of `ExportPmlBundle.tsx` to re-enable when fidelity improves. The portable Mol\* viewer covers most of the same "share this scene" use case meanwhile.
+
 ## Future Work
 
 ### Other potential improvements
