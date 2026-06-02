@@ -87,6 +87,20 @@ Multiple fixes for how the app handles dropped or imported `.cif` ligand diction
 - **Toggle ref sync**: `createRef.current` was initialized once and never re-synced when the toggle changed; the checkbox visually toggled but had no effect on import. Now synced via `useEffect`.
 - **Mark atoms dirty after dict load**: `addDict()` and `loadMissingMonomers()` now call `setAtomsDirty(true)` so the next redraw re-fetches bonds with the new dictionary applied — previously bonds for an unknown ligand stayed broken-looking until you forced a redraw manually.
 
+### 11. MVS portable-viewer export (File → Export portable viewer)
+
+PyKeko-only menu item. Saves the current scene as a self-contained Mol* HTML viewer (~3–10 MB) you can share, drop into a slide, or open in any browser without installing anything. Density maps included get cropped to a 20 Å cube around the camera target so the file stays compact.
+
+Faithful to what's on screen:
+
+- **Real Moorhen reps**: each visible representation (CBs / CRs / MolecularSurface / VdwSpheres / glycoBlocks / ligands / …) maps to the corresponding MVS rep type, so the export looks like the live view rather than a generic cartoon fallback.
+- **Real chain colours**: pulled from Coot's `get_colour_rules`, not a hardcoded palette. `applyColourToNonCarbonAtoms=false` is honored — the rule's colour goes on carbons, heteroatoms keep CPK (N=blue, O=red, S=yellow, …).
+- **CID selectors**: chain (`/mdl/chain`), residue, and `r1-r2` ranges round-trip through to MVS as `auth_asym_id` / `auth_seq_id` / `beg_auth_seq_id`-`end_auth_seq_id`.
+- **Density**: 2Fo-Fc as one isosurface, Fo-Fc as two (positive green / negative red), absolute contour preserved so the export shows the exact contour the user was looking at; the Mol* slider exposes a Relative/Absolute toggle so the viewer can switch.
+- **Camera**: capture target / position / up from Moorhen's view matrix.
+
+The bundled Mol* viewer (`PyKeko/viewer-template`) is trimmed for the "show one scene" use case: left panel starts collapsed (icon column only), `Remote States` snapshot list removed, action picker filtered to just Open Files. A small chevron button at the top-right of the canvas toggles the right Structure Tools panel for more drawing area.
+
 ---
 
 ## Keyboard shortcuts

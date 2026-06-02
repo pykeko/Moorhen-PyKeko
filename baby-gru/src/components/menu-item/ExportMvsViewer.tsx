@@ -55,14 +55,43 @@ export const ExportMvsViewer = () => {
         }
         try {
             // --- Structures ---
-            const mols = await Promise.all(molecules.map(async m => ({
-                name: m.name,
-                // PDB rather than mmCIF: Coot's mmCIF writer doesn't tag polymer
-                // residues as polymer, so Mol*'s cartoon path can't fire (see builder).
-                coords: await m.getAtoms("pdb"),
-                // Per-chain colouring needs the actual chain letters (auth_asym_id).
-                chains: (m.sequences || []).map((s: any) => s.chain).filter(Boolean),
-            })));
+            const mols = await Promise.all(molecules.map(async m => {
+                // Ensure Moorhen has fetched the real Coot colour rules; without
+                // this the export falls back to a fixed palette that doesn't
+                // match what was on screen.
+                if (!m.defaultColourRules) {
+                    try { await m.fetchDefaultColourRules(); } catch { /* fall back to palette */ }
+                }
+                const rulesPair = (rules: any[] | undefined) => (rules || [])
+                    .map((r: any) => ({
+                        cid: r.cid as string,
+                        color: r.color as string,
+                        applyColourToNonCarbonAtoms: r.applyColourToNonCarbonAtoms === true,
+                    }))
+                    .filter((r: any) => typeof r.cid === "string" && typeof r.color === "string");
+                const colourRules = rulesPair(m.defaultColourRules);
+                // Collect the molecule's currently-visible representations.
+                // Each rep carries its style + cid + per-rep colourRules; the
+                // builder maps Moorhen styles → MVS rep types and applies the
+                // rep-level rules first, falling back to molecule defaults.
+                const representations = ((m.representations || []) as any[])
+                    .filter((r: any) => r.visible !== false)
+                    .map((r: any) => ({
+                        style: r.style,
+                        cid: r.cid,
+                        colourRules: rulesPair(r.colourRules),
+                    }));
+                return {
+                    name: m.name,
+                    // PDB rather than mmCIF: Coot's mmCIF writer doesn't tag polymer
+                    // residues as polymer, so Mol*'s cartoon path can't fire (see builder).
+                    coords: await m.getAtoms("pdb"),
+                    // Per-chain colouring needs the actual chain letters (auth_asym_id).
+                    chains: (m.sequences || []).map((s: any) => s.chain).filter(Boolean),
+                    colourRules,
+                    representations,
+                };
+            }));
 
             // --- Maps (visible only) ---
             // Crop each map to a cube around the camera target (matches Moorhen's

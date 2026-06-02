@@ -622,6 +622,40 @@ This is what let Phase 3 of the PyMOL translator land in ~3 hours flat — every
 PyKekoDev --user-data-dir=/tmp/moorhen-test --remote-debugging-port=9222 --remote-allow-origins='*'
 ```
 
+### MVS portable-viewer export (pk-v0.2.3)
+
+PyKeko's File menu has an **Export portable viewer (.html)** entry that bundles the current scene as a single self-contained HTML file with a Mol* viewer baked in. The output is shareable, droppable into slides, openable in any browser without installs.
+
+**Pieces:**
+
+- [`baby-gru/src/utils/MvsExportBuilder.ts`](baby-gru/src/utils/MvsExportBuilder.ts) — builds the MVS JSON tree (nodes + selectors + colours + maps) from per-molecule inputs.
+- [`baby-gru/src/utils/MvsCcp4Crop.ts`](baby-gru/src/utils/MvsCcp4Crop.ts) — slices a CCP4 grid down to a cube around the camera target (default 20 Å half-side) so embedded maps stay small.
+- [`baby-gru/src/utils/MvsCameraCapture.ts`](baby-gru/src/utils/MvsCameraCapture.ts) — converts Moorhen's quaternion + origin + zoom view state to MVS camera `target` / `position` / `up` in world coords, with distance compensation for Moorhen's `1/zoom`-scaled orthographic projection vs Mol\*'s perspective.
+- [`baby-gru/src/components/menu-item/ExportMvsViewer.tsx`](baby-gru/src/components/menu-item/ExportMvsViewer.tsx) — the menu item itself; collects molecules, maps, camera, and colour rules from Redux + per-molecule state and feeds them to the builder.
+- The Mol\* viewer template lives in [`PyKeko/viewer-template/`](https://github.com/pykeko/PyKeko/tree/main/viewer-template) and is bundled at PyKeko build time (`extraResource` in `forge.config.js`); the wrapper's `pykeko:export-mvs-viewer` IPC handler in `PyKeko/main.js` does the placeholder substitution + native save dialog.
+
+**Fidelity decisions:**
+
+- **Rep mapping** — each visible Moorhen `RepresentationStyles` value maps to an MVS rep type via `moorhenRepToMvs()`: CBs / CAs / CDs / StickBases / ligands / adaptativeBonds → `ball_and_stick`, CRs / Calpha → `cartoon`, VdwSpheres → `spacefill`, MolecularSurface / VdWSurface / gaussian / MetaBalls → `surface`, glycoBlocks → `carbohydrate`. UI-helper styles (`hover`, `environment`, `rama`, `rotamer`, `restraints`, validation overlays, etc.) return `null` and are skipped silently.
+- **Per-rep colour rules + molecule defaults** — each MVS component prefers the rep's own `colourRules`; falls through to `molecule.defaultColourRules` (from Coot's `get_colour_rules`); falls back to a chain palette only if both are empty.
+- **CPK heteroatom preservation** — Moorhen's chain rules default to `applyColourToNonCarbonAtoms=false`. We honor this by expanding such a rule into one colour node per element: the rule's colour restricted to `type_symbol: C`, then explicit overrides for N (blue), O (red), S (yellow), and 16 other common elements. CPK expansion is skipped for cartoon / carbohydrate where per-element colouring is meaningless.
+- **CID-to-selector parser** — handles `/mdl/chain`, `/mdl/chain/resno`, `/mdl/chain/r1-r2`, and the whole-structure variants `//`, `/*/*/*/*`, `/*/*/*/*:*`. Alt-loc suffix `:alt` is stripped (MVS has no alt-loc selector — see Known Issues).
+- **Density** — already-cropped CCP4 bytes embed as base64 `data:application/octet-stream` URLs. 2Fo-Fc → one `volume_representation` `isosurface` at `absolute_isovalue` matching the user's contour; Fo-Fc → two (positive + negative, fixed green/red, both at ±contour). The Mol\* slider in the viewer exposes a Relative/Absolute toggle so the recipient can switch to σ-units.
+
+**Viewer template trimming (also pk-v0.2.3):**
+
+A general-purpose Mol\* viewer ships a lot of UI an exported scene doesn't need. `PyKeko/viewer-template/src/App.tsx` strips the bundled spec down:
+
+- `actions` filtered to just `OpenFiles` (drag/drop still works for adding extra structures)
+- `components.remoteState = 'none'` removes the public snapshot-sharing list
+- `layout.initial.regionState.left = 'collapsed'` starts the panel as just the icon column; users click any of the five icons (Home / State Tree / Plugin State / Help / Settings) to expand that tab
+- `canvas3d.camera.fov` is set from `window.__PYKEKO_FOV__` (PyMOL exports inject this through a template placeholder; PyKeko leaves it `null` and Mol\* keeps its 45° default since Moorhen has no native FOV)
+- Custom floating chevron button (top-right corner of the canvas) toggles `regionState.right` between `'full'` and `'hidden'`; Mol\* has no built-in right-panel toggle and the right Structure Tools panel eats meaningful canvas width on small screens
+
+**Standalone PyMOL exporter — sibling work, not in this repo:**
+
+A separate `pymol_to_molstar.py` script (lives in the user's workspace, not git-tracked) produces the same MVS-bundled HTML from inside a PyMOL session for users who want to share a PyMOL scene without going through Moorhen. Reuses the same `PyKeko/viewer-template` bundle. The standalone covers density-less scenes; for density export, PyKeko's path is the canonical one because Coot's grid handling is more robust than the static-crop fallback the standalone uses.
+
 ## Future Work
 
 ### Other potential improvements
