@@ -687,6 +687,10 @@ The clip param lives inside `type.params.clip` on the volume rep cell — a `{va
 
 The `File → Save as PyMOL bundle (.pml)` menu item was hidden in pk-v0.2.3+. The `.pml` script produced didn't faithfully reproduce the live scene (a "complete disaster" per user); we left the bundle builder ([`MoorhenPymolSaveBundle.ts`](baby-gru/src/utils/MoorhenPymolSaveBundle.ts), ~290 lines) and the `pykeko:save-bundle` IPC handler in `PyKeko/main.js` in place so the work isn't lost — flip the early `return null` at the top of `ExportPmlBundle.tsx` to re-enable when fidelity improves. The portable Mol\* viewer covers most of the same "share this scene" use case meanwhile.
 
+### Interactive Scripting history (pk-v0.2.5)
+
+[`MoorhenScriptModal.tsx`](baby-gru/src/components/modal/MoorhenScriptModal.tsx) now wraps shell-style `↑`/`↓` history navigation around the existing react-simple-code-editor input. Handler is attached via Editor's own `onKeyDown` prop (a wrapping-div + bubbling approach broke because `DraggableModalBase` does a two-phase measure/render that swaps the body div). Per-mode history (PyMOL and JavaScript keep separate pools) stored at `localStorage["moorhen.scripting.history.<mode>"]` capped at 200 entries with consecutive-duplicate dedup. Cursor-at-boundary gating preserves normal caret movement inside multi-line scripts: `↑` only enters history mode when there's no `\n` before the cursor; `↓` only when there's no `\n` after. A draft you were typing before diving into history is stashed (one slot, in `draftRef`) and restored when you `↓` back past `idx === -1`. Editing a recalled entry auto-snaps out of history mode via a `useEffect([code, history])` that compares against the expected history entry. Also wired `Cmd/Ctrl+Enter` as a submit shortcut so you can run without reaching for the Play button.
+
 ## Future Work
 
 ### Other potential improvements

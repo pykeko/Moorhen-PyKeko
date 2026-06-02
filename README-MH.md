@@ -34,6 +34,8 @@ Coverage:
 
 Anything unsupported (`iterate`, `alter`, `cmd.do`, movie commands, etc.) warns to the console with the line number and continues. Full reference at [`docs/pymol-translator.md`](docs/pymol-translator.md); 62 pure-JS unit tests in `baby-gru/tests/__tests__/pymol*.test.js` (run with `npx jest --testPathPatterns pymol --selectProjects api-utils`).
 
+**Shell-style history** (pk-v0.2.5+): the modal's textarea has per-mode history. `↑` at the top of the input recalls the previous command; `↓` at the bottom restores forward (or restores your in-progress draft when you reach the bottom). Cursor-position-aware so `↑`/`↓` still move the caret line-by-line inside multi-line scripts. `Cmd/Ctrl+Enter` submits. History persists across reloads in localStorage (~200 entries per mode, dedupes consecutive duplicates).
+
 ### 2. NCS Ghosts
 
 Visualize non-crystallographic symmetry by overlaying every NCS-related chain *transformed onto* a chosen master chain — translucent, color-cycled, computed in C++ via SSM alignment.
