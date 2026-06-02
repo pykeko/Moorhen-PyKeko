@@ -6,6 +6,16 @@
 //
 // Mirrors ExportMvsViewer.tsx exactly in shape, so the file/menu plumbing
 // is identical — only the export payload differs.
+//
+// STUBBED in pk-v0.2.3 — the generated .pml + sibling files don't currently
+// reproduce the live scene accurately enough to be useful (a "complete
+// disaster" per the user). The supporting modules — buildPmlBundle in
+// MoorhenPymolSaveBundle.ts (the script generator) and pykeko:save-bundle
+// in PyKeko/main.js (the IPC writer) — are kept in tree so we can revive
+// this once the fidelity work lands. To re-enable: flip the early `return
+// null` below back to the original render path. The portable Mol* viewer
+// export (File → Export portable viewer (.html)) covers most of the same
+// use case in the meantime.
 import { useDispatch, useSelector } from "react-redux";
 import { RootState, enqueueSnackbar } from "@/store";
 import { moorhen } from "../../types/moorhen";
@@ -21,6 +31,10 @@ const isLiveMol = (m: any): boolean => {
 };
 
 export const ExportPmlBundle = () => {
+    // Stubbed — see file header. Returning null keeps the menu entry slot
+    // empty without touching the underlying bundle builder + IPC.
+    return null;
+    // eslint-disable-next-line @typescript-eslint/no-unreachable -- intentional kill switch
     const dispatch = useDispatch();
     const molecules = useSelector((state: RootState) => state.molecules.moleculeList) as moorhen.Molecule[];
     const maps = useSelector((state: RootState) => state.maps) as any as moorhen.Map[];
