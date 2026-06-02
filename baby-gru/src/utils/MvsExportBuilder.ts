@@ -116,9 +116,11 @@ const node = (kind: string, params: any = {}, children: any[] = []) => ({ kind, 
 
 // Parse a Moorhen CID into an MVS selector object. Format is
 // `/mdl/chain/resno(ins)/atom:alt`; we handle the cases that matter for
-// colour rules + rep selectors (most are chain-level or whole-structure).
-// Returns null for CIDs we don't know how to map. The constant `WHOLE`
-// signals "no selector restriction" (caller emits no `selector` field).
+// colour rules + rep selectors. Wildcards `*` mean "any" and translate to
+// "no restriction on this field". Residue-name selectors `(RESN)` or
+// `(RESN,RESN,...)` translate to auth_comp_id. Returns null for CIDs we
+// don't know how to map. The constant `WHOLE` signals "no selector
+// restriction" (caller emits no `selector` field).
 const WHOLE_STRUCTURE: Record<string, any> = {};
 const cidToMvsSelector = (cid: string): Record<string, any> | null => {
     if (!cid) return null;
@@ -136,6 +138,59 @@ const cidToMvsSelector = (cid: string): Record<string, any> | null => {
     // /mdl/chain/r1-r2
     m = noAlt.match(/^\/[\d*]*\/([A-Za-z0-9]+)\/(-?\d+)-(-?\d+)\/?$/);
     if (m) return { auth_asym_id: m[1], beg_auth_seq_id: parseInt(m[2], 10), end_auth_seq_id: parseInt(m[3], 10) };
+    // Specialized: /mdl/chain/(RESN)/atom forms — fall through to general parser below
+    // (the early-return above only matched chain-only / residue-only / range cases).
+    // Now the wildcard-friendly forms. Moorhen often emits things like
+    // `/*/*/(ABM)/*` for a ligand selection, where any `*` field means
+    // "don't restrict this dimension". We parse the 4-segment shape
+    // (mdl/chain/res/atom) and translate each non-wildcard segment to
+    // its MVS counterpart.
+    //   chain segment:  '*' → skip; 'A' / 'AA' → auth_asym_id
+    //   res segment:    '*' → skip; '(RESN)' or '(RESN,RESN)' → auth_comp_id;
+    //                   integer → auth_seq_id; r1-r2 → beg/end_auth_seq_id
+    //   atom segment:   '*' → skip; 'CA' → auth_atom_id
+    const segs = noAlt.split("/");
+    // /mdl/chain/res/atom = 5 pieces ("", mdl, chain, res, atom)
+    if (segs.length === 5 && segs[0] === "") {
+        const [_, _mdl, chainS, resS, atomS] = segs;
+        const sel: Record<string, any> = {};
+        // Chain
+        if (chainS && chainS !== "*" && /^[A-Za-z0-9]+$/.test(chainS)) sel.auth_asym_id = chainS;
+        else if (chainS && chainS !== "*") return null;   // can't represent chain set ('A,B')
+        // Residue
+        if (resS && resS !== "*") {
+            // (RESN) or (RESN,RESN,...) — auth_comp_id selector. MVS takes
+            // a single string here, so for a single name we set it directly;
+            // for a comma list we'd need a union expression which MVS doesn't
+            // straightforwardly support — fall back to first one and warn
+            // (covers the typical single-ligand case).
+            const nameMatch = resS.match(/^\(([^)]+)\)$/);
+            if (nameMatch) {
+                const names = nameMatch[1].split(",").map(s => s.trim()).filter(Boolean);
+                if (names.length === 1) sel.auth_comp_id = names[0];
+                else if (names.length > 1) {
+                    // Only one name expressible per MVS component selector.
+                    // Pick the first; the rest are silently dropped (rare path).
+                    sel.auth_comp_id = names[0];
+                }
+            } else if (/^-?\d+$/.test(resS)) {
+                sel.auth_seq_id = parseInt(resS, 10);
+            } else if (/^-?\d+--?\d+$/.test(resS)) {
+                const [a, b] = resS.split("-").map(s => parseInt(s, 10));
+                sel.beg_auth_seq_id = a; sel.end_auth_seq_id = b;
+            } else {
+                return null;
+            }
+        }
+        // Atom
+        if (atomS && atomS !== "*") {
+            // Atom names may have spaces ("CA  ") in PDB; strip.
+            const atomName = atomS.trim();
+            if (atomName) sel.auth_atom_id = atomName;
+        }
+        // All-wildcard segments → empty sel → treat as whole-structure.
+        return Object.keys(sel).length === 0 ? WHOLE_STRUCTURE : sel;
+    }
     return null;
 };
 
@@ -267,15 +322,20 @@ const repToComponent = (
     const mapping = moorhenRepToMvs(rep.style);
     if (!mapping) return null;
 
-    // Component selector: use the rep's cid if it's not the catch-all,
-    // else "all" so MVS pulls every atom into the component.
+    // Component selector. Three cases:
+    //   - WHOLE_STRUCTURE (the catch-all "/*/*/*/*"): use MVS's "all" keyword.
+    //   - null (unparseable CID — e.g. complex set algebra we don't handle):
+    //     SKIP this rep with a warning. Falling back to "all" was a footgun:
+    //     a spheres rep meant for a single ligand silently expanded to every
+    //     atom in the scene (pk-v0.2.5 bug).
+    //   - parsed object: use it.
     const cidSel = cidToMvsSelector(rep.cid);
-    let componentSelector: any;
-    if (cidSel === null || cidSel === WHOLE_STRUCTURE) {
-        componentSelector = "all";
-    } else {
-        componentSelector = cidSel;
+    if (cidSel === null) {
+        // eslint-disable-next-line no-console
+        console.warn(`[MvsExportBuilder] dropping rep '${rep.style}' — CID '${rep.cid}' didn't parse to an MVS selector. Coverage in the export is reduced; the corresponding rep won't render.`);
+        return null;
     }
+    const componentSelector = cidSel === WHOLE_STRUCTURE ? "all" : cidSel;
 
     // Build colour children. Priority: rep's own rules > molecule defaults
     // > chain palette fallback > uniform grey. The mvsType is threaded
