@@ -1,16 +1,21 @@
 // First-run welcome for the PyKeko desktop app. Shows once per version (tracked in
 // localStorage), pointing new users at the command-line launcher so they don't have to
 // hunt for it in Preferences. Renders nothing in the browser build and nothing once
-// dismissed for the current version — bump HINT_VERSION to re-surface (e.g. a "what's new").
+// dismissed for the current HINT_VERSION — bump HINT_VERSION to re-surface (e.g. a "what's new").
 import { useEffect, useState } from "react";
 import { Dialog, DialogTitle, DialogContent, DialogActions, Typography, Box } from "@mui/material";
 import { useDispatch } from "react-redux";
 import { MoorhenButton } from "../inputs";
 import { enqueueSnackbar } from "@/store";
 
-// Bump this when there's something new worth re-announcing to returning users.
+// Hint version is independent of app version: bump only when the WELCOME
+// CONTENT is worth re-announcing to returning users, not on every bug-fix
+// release. The TITLE shows the actual app version (read from the wrapper's
+// preload via window.__pykekoVersion), so a fresh-install user always sees
+// the right number even if HINT_VERSION sits at an older release.
 const HINT_VERSION = "0.2.0";
 const STORAGE_KEY = "pykeko-seen-hint-version";
+const FALLBACK_DISPLAY_VERSION = HINT_VERSION;  // only used if preload didn't expose __pykekoVersion
 
 export const MoorhenFirstRunHint = () => {
     const dispatch = useDispatch();
@@ -56,7 +61,7 @@ export const MoorhenFirstRunHint = () => {
 
     return (
         <Dialog open={open} onClose={dismiss} maxWidth="sm">
-            <DialogTitle>Welcome to PyKeko {HINT_VERSION}</DialogTitle>
+            <DialogTitle>Welcome to PyKeko {(window as any).__pykekoVersion || FALLBACK_DISPLAY_VERSION}</DialogTitle>
             <DialogContent>
                 <Typography gutterBottom>
                     PyKeko can open structures straight from the terminal — like Coot's <code>coot file.pdb</code>
