@@ -601,8 +601,8 @@ export const autoOpenFiles = async (
                 dispatch(addMapList(newMaps));
                 dispatch(setActiveMap(newMaps[0]));
             }
-        } else if (file.name.endsWith(".pb")) {
-            //Session file
+        } else if (file.name.endsWith(".pb") || file.name.endsWith(".pykeko")) {
+            //Session file (.pb upstream, .pykeko PyKeko-branded)
             try {
                 await handleSessionUpload(file, commandCentre, store, monomerLibraryPath, molecules, maps, timeCapsuleRef, dispatch);
             } catch (e) {

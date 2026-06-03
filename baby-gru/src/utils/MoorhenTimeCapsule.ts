@@ -178,6 +178,15 @@ export type backupSession = {
     dataIsEmbedded: boolean;
     vectorData?: MoorhenVector[];
     overlay2dData?: Overlay2DSessionData;
+    // PyKeko UI state (optional, ignored by upstream Moorhen). Captures
+    // scripting modal mode + welcome-hint seen flag so a reopened session
+    // restores the user's working surface, not just the molecular scene.
+    pykekoUiState?: {
+        rightPanelHidden?: boolean;
+        leftPanelState?: string;
+        scriptingMode?: string;
+        seenHintVersion?: string;
+    };
 };
 
 export type Overlay2DSessionData = {
@@ -603,6 +612,28 @@ export class MoorhenTimeCapsule {
             imageFracPath2D: this.store.getState().overlays.imageOverlayList,
         };
 
+        // PyKeko-specific UI state capture — panel positions, scripting mode,
+        // welcome-hint seen flag. None of these affect the molecular scene;
+        // they make the reopened session feel "where the user left off."
+        // Cheap, all read-only-from-localStorage / Redux. Wrapped in try
+        // so that any read failure doesn't kill the whole session save.
+        let pykekoUiState: any = undefined;
+        try {
+            const ls = (k: string): string | null => {
+                try { return typeof window !== "undefined" ? window.localStorage.getItem(k) : null; }
+                catch { return null; }
+            };
+            // Right-panel toggle isn't in Redux — it's a viewer-template-only
+            // state. Skip for the live app; this field is mostly relevant when
+            // a future "open this session in the portable viewer" path lands.
+            pykekoUiState = {
+                rightPanelHidden: false,
+                leftPanelState: "",
+                scriptingMode: ls("moorhen.scripting.mode") || "",
+                seenHintVersion: ls("pykeko-seen-hint-version") || "",
+            };
+        } catch { /* no-op — backward compat with absence */ }
+
         const session: backupSession = {
             includesAdditionalMapData: includeAdditionalMapData,
             moleculeData: moleculeData,
@@ -613,6 +644,7 @@ export class MoorhenTimeCapsule {
             dataIsEmbedded: embedData,
             overlay2dData: overlay2dData,
             vectorData: vectorData,
+            pykekoUiState: pykekoUiState,
         };
 
         return session;

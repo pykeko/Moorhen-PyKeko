@@ -74,6 +74,12 @@ message Representation {
     string hbondedToCid = 11;
     bool hbondedTo = 12;
     float neighboursDistance = 13;
+    // PyKeko addition: per-rep visibility. Proto3 default is false; we treat
+    // ABSENT as "visible" (true) so old .pb files without this field still
+    // restore visibly. The capture/restore code maps Moorhen's rep.visible
+    // accordingly. (proto3 doesn't distinguish absent vs default-false for
+    // primitives, so semantically we encode "hidden iff isHidden=true".)
+    bool isHidden = 14;
 }
 
 message MoleculeSessionData {
@@ -257,6 +263,21 @@ message Blur {
   float radius = 3;
 }
 
+// PyKeko-specific UI state. Optional; absent in .pb files from upstream
+// Moorhen, ignored gracefully if missing. Captures things the user notices
+// when they reopen a session: which panels were open, theme, etc.
+message PyKekoUiState {
+  // Right-panel toggle (Hide/Show Structure Tools). Default false = shown.
+  bool rightPanelHidden = 1;
+  // Left-panel state. "collapsed" / "full" / "hidden". Default "" → leave as configured.
+  string leftPanelState = 2;
+  // PyMOL/JavaScript mode of the Interactive Scripting modal. "" → leave default.
+  string scriptingMode = 3;
+  // Welcome modal seen flag (the version string). Useful if the user wants to
+  // hand a session to a colleague who hasn't seen the hint.
+  string seenHintVersion = 4;
+}
+
 message Session {
   string version = 1;
   bool includesAdditionalMapData = 2;
@@ -267,4 +288,5 @@ message Session {
   bool dataIsEmbedded = 7;
   optional Overlay2DSessionData overlay2dData = 8;
   repeated MoorhenVector vectorData = 9;
+  optional PyKekoUiState pykekoUiState = 10;
 }

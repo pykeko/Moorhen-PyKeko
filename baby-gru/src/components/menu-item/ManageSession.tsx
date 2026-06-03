@@ -10,6 +10,15 @@ import { MoorhenButton, MoorhenTextInput } from "../inputs";
 import { MoorhenMenuItem, MoorhenMenuItemPopover, MoorhenStack } from "../interface-base";
 import { Backups } from "./Backups";
 
+// Detect the PyKeko desktop wrapper via its preload-injected IPC. When
+// present, save/open go through native panels and write a single
+// `.pykeko` file the user can email/move/back up like any other doc.
+// When absent (plain browser build), fall back to the legacy
+// browser-download for save and the existing `.pb` upload picker for load.
+const isDesktopWithSessionIpc = (): boolean => {
+    try { return !!(window as any)?.__moorhenControl?.saveSession; } catch { return false; }
+};
+
 export const ManageSession = () => {
     const commandCentre = useCommandCentre();
     const store = useStore<RootState>();
@@ -37,13 +46,63 @@ export const ManageSession = () => {
             }
     };
 
-    const getSession = async () => {
+    const buildSessionBytes = async (): Promise<Uint8Array> => {
         const sessionData = await timeCapsule.current.fetchSession(true);
-        const _sessionName = sessionName !== "" ? sessionName : "moorhen_session";
-        //console.log(JSON.stringify(sessionData, null, 4))
         const sessionMessage = moorhensession.Session.fromObject(sessionData);
-        const sessionBytes = moorhensession.Session.encode(sessionMessage).finish();
-        doDownload([sessionBytes] as BlobPart[], `${_sessionName}.pb`);
+        return moorhensession.Session.encode(sessionMessage).finish();
+    };
+
+    // Legacy: browser download (used when PyKeko desktop IPC isn't available).
+    const getSession = async () => {
+        const bytes = await buildSessionBytes();
+        const _sessionName = sessionName !== "" ? sessionName : "moorhen_session";
+        doDownload([bytes] as BlobPart[], `${_sessionName}.pb`);
+    };
+
+    // Desktop: native Save panel writes a single `.pykeko` file the user can
+    // share, back up, or open later. Default name = first molecule's name
+    // (matching the MVS-export convention), with the .pykeko extension making
+    // it obvious to the user what the file represents.
+    const saveSessionDesktop = async () => {
+        try {
+            const bytes = await buildSessionBytes();
+            const first = molecules?.[0]?.name || sessionName || "pykeko_session";
+            const suggested = `${first}.pykeko`;
+            const ctrl = (window as any).__moorhenControl;
+            const r = await ctrl.saveSession(bytes, suggested);
+            if (r?.ok) {
+                dispatch(enqueueSnackbar({ message: `Session saved → ${r.path}`, variant: "success" }));
+            } else if (r?.canceled) {
+                dispatch(enqueueSnackbar({ message: "Save canceled", variant: "info" }));
+            } else {
+                dispatch(enqueueSnackbar({ message: `Save failed: ${r?.error || "unknown error"}`, variant: "error" }));
+            }
+        } catch (e: any) {
+            console.error(e);
+            dispatch(enqueueSnackbar({ message: `Save failed: ${e?.message || e}`, variant: "error" }));
+        }
+    };
+
+    // Desktop: native Open panel returns bytes, we decode + apply via the
+    // same path the legacy "Backups" workflow uses.
+    const openSessionDesktop = async () => {
+        try {
+            const ctrl = (window as any).__moorhenControl;
+            const r = await ctrl.openSession();
+            if (!r?.ok) {
+                if (!r?.canceled) dispatch(enqueueSnackbar({ message: `Open failed: ${r?.error || "unknown error"}`, variant: "error" }));
+                return;
+            }
+            // Bytes come back as a Buffer-shaped object across IPC; wrap as
+            // Uint8Array for protobuf's decoder.
+            const bytes = r.bytes instanceof Uint8Array ? r.bytes : new Uint8Array(r.bytes);
+            const sessionMessage = moorhensession.Session.decode(bytes, undefined, undefined);
+            await loadSession(sessionMessage);
+            dispatch(enqueueSnackbar({ message: `Session loaded from ${r.path}`, variant: "success" }));
+        } catch (e: any) {
+            console.error(e);
+            dispatch(enqueueSnackbar({ message: `Open failed: ${e?.message || e}`, variant: "error" }));
+        }
     };
 
     const createBackup = async () => {
@@ -100,29 +159,48 @@ export const ManageSession = () => {
             dispatch(enqueueSnackbar({ message: "Error loading session", variant: "warning" }));
         }
     };
+    const desktop = isDesktopWithSessionIpc();
     return (
         <>
-            <label htmlFor="session-file-input" className="moorhen__input__label-menu">
-                Save Session File:
-            </label>
-            <label htmlFor="text-input-session" className="moorhen_menu-custom-left-margin">
-                <MoorhenTextInput
-                    text={sessionName}
-                    setText={setSessionName}
-                    button={true}
-                    onClick={getSession}
-                    icon="MatSymFileDownload"
-                    style={{ width: "85%", marginLeft: "0", paddingLeft: "0" }}
-                    id="text-input-session"
-                />
-            </label>
-            <hr className="moorhen_menu-hr"></hr>
-            <MoorhenMenuItem id="save-session-menu-item" onClick={createBackup} disabled={!enableTimeCapsule}>
-                Save in-browser backup
-            </MoorhenMenuItem>
-            <MoorhenMenuItemPopover menuItemText="Load in-browser Backup">
-                <Backups disabled={!enableTimeCapsule} loadSession={loadSession} />
-            </MoorhenMenuItemPopover>
+            {desktop ? (
+                // Desktop: clean one-click Save/Open via native panels.
+                // The legacy "Save Session File:" textbox-row and the
+                // in-browser-backup items are hidden — they made sense in
+                // the browser build (no filesystem access, IndexedDB as a
+                // workaround), but are confusing when you have real files.
+                <>
+                    <MoorhenMenuItem id="pykeko-save-session" onClick={saveSessionDesktop}>
+                        Save session…
+                    </MoorhenMenuItem>
+                    <MoorhenMenuItem id="pykeko-open-session" onClick={openSessionDesktop}>
+                        Open session…
+                    </MoorhenMenuItem>
+                </>
+            ) : (
+                <>
+                    <label htmlFor="session-file-input" className="moorhen__input__label-menu">
+                        Save Session File:
+                    </label>
+                    <label htmlFor="text-input-session" className="moorhen_menu-custom-left-margin">
+                        <MoorhenTextInput
+                            text={sessionName}
+                            setText={setSessionName}
+                            button={true}
+                            onClick={getSession}
+                            icon="MatSymFileDownload"
+                            style={{ width: "85%", marginLeft: "0", paddingLeft: "0" }}
+                            id="text-input-session"
+                        />
+                    </label>
+                    <hr className="moorhen_menu-hr"></hr>
+                    <MoorhenMenuItem id="save-session-menu-item" onClick={createBackup} disabled={!enableTimeCapsule}>
+                        Save in-browser backup
+                    </MoorhenMenuItem>
+                    <MoorhenMenuItemPopover menuItemText="Load in-browser Backup">
+                        <Backups disabled={!enableTimeCapsule} loadSession={loadSession} />
+                    </MoorhenMenuItemPopover>
+                </>
+            )}
         </>
     );
 };
