@@ -55,7 +55,9 @@ Known gotcha (the `~/bin/moorhen` shell launcher exists to work around this): ru
 
 ## Releases
 
-Releases are tagged `pk-vX.Y.Z` (latest: [`pk-v0.2.9`](https://github.com/pykeko/PyKeko/releases/tag/pk-v0.2.9), 2026-06-03; from pk-v0.2 the `~/PyKeko` wrapper carries a matching tag too, and the `PyKeko.dmg` asset lives on the **PyKeko** wrapper repo's releases page, not here — this repo just carries the tag pointing at the matching commit). Version source of truth: `~/PyKeko/package.json` (currently `0.2.9`); this fork's `baby-gru/package.json` carries upstream Moorhen's version (`1.0.0-alpha.1`) and shouldn't be edited as part of PyKeko's versioning. The PyKeko wrapper's `CLAUDE.md` carries the full per-version changelog.
+Releases are tagged `pk-vX.Y.Z` (latest: [`pk-v0.2.9`](https://github.com/pykeko/Moorhen-PyKeko/releases/tag/pk-v0.2.9), 2026-06-03). The **`PyKeko.dmg` asset lives on _this_ repo's releases page** — that's been the convention since v0.1 and matches the org profile README's download badge / install link. The PyKeko wrapper repo (`pykeko/PyKeko`) carries a matching tag at the same version with a mirror of the dmg as a fallback, but the canonical download lives here. Version source of truth: `~/PyKeko/package.json` (currently `0.2.9`); this fork's `baby-gru/package.json` carries upstream Moorhen's version (`1.0.0-alpha.1`) and shouldn't be edited as part of PyKeko's versioning. The PyKeko wrapper's `CLAUDE.md` carries the full per-version changelog.
+
+Note on the v0.2.7 → v0.2.9 gap: v0.2.7 shipped with a preload regression that silently broke the `__moorhenControl` IPC bridge in the packaged app. v0.2.8 was authored (and tagged briefly) but never properly released — the same preload bug was still there. v0.2.9 fixed the regression and is the first build since v0.2.6 where every Electron-only menu item works. The v0.2.7 release on this repo carries a "SUPERSEDED — please upgrade" banner in its release notes.
 
 ## Branch-sync workflow
 
