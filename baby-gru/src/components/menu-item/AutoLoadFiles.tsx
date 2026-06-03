@@ -4,6 +4,7 @@ import { useCommandCentre, useMoorhenInstance, useTimeCapsule } from "../../Inst
 import { MoorhenReduxStoreType, RootState } from "../../store/MoorhenReduxStore";
 import { autoOpenFiles } from "../../utils/MoorhenFileLoading";
 import { MoorhenFileInput } from "../inputs";
+import { MoorhenMenuItem } from "../interface-base";
 
 export const AutoLoadFiles = () => {
     const commandCentre = useCommandCentre();
@@ -49,30 +50,31 @@ export const AutoLoadFiles = () => {
         finally { setIsLoading(false); document.body.click(); }
     };
 
+    // Under the desktop wrapper, render as a regular MoorhenMenuItem so the
+    // whole row is one obvious click target. The previous shape (a "Open Files"
+    // label span next to a tiny invisibly-styled `Browse…` button) made it look
+    // as if the row was just a non-clickable header. Browser build keeps the
+    // file-input widget because it's the only path that can actually open files
+    // without a native dialog.
+    if (typeof nativeOpen === "function") {
+        return (
+            <MoorhenMenuItem onClick={nativeOpenHandler} disabled={isLoading}>
+                {isLoading ? "Opening files…" : "Open files…"}
+            </MoorhenMenuItem>
+        );
+    }
     return (
         <>
             <span className="moorhen__input__label-menu">Open Files</span>
-            {typeof nativeOpen === "function" ? (
-                <button
-                    type="button"
-                    className="moorhen_menu-custom-left-margin moorhen__input-files-upload"
-                    onClick={nativeOpenHandler}
-                    disabled={isLoading}
-                    style={{ cursor: "pointer", border: "none", background: "transparent", textAlign: "left", font: "inherit", padding: 0 }}
-                >
-                    {isLoading ? "Opening…" : "Browse…"}
-                </button>
-            ) : (
-                <MoorhenFileInput
-                    accept=".pdb, .mmcif, .cif, .ent, .mol, .mtz, .map, .pb, .pykeko, .mrc"
-                    multiple={true}
-                    isLoading={isLoading}
-                    className="moorhen_menu-custom-left-margin"
-                    onChange={e => {
-                        autoLoadHandler(e);
-                    }}
-                />
-            )}
+            <MoorhenFileInput
+                accept=".pdb, .mmcif, .cif, .ent, .mol, .mtz, .map, .pb, .pykeko, .mrc"
+                multiple={true}
+                isLoading={isLoading}
+                className="moorhen_menu-custom-left-margin"
+                onChange={e => {
+                    autoLoadHandler(e);
+                }}
+            />
         </>
     );
 };
