@@ -6,6 +6,7 @@ import { parseCifDict } from "@/utils/MoorhenFileLoading";
 import { useCommandCentre, usePaths } from "../../InstanceManager";
 import { triggerUpdate } from "../../store/moleculeMapUpdateSlice";
 import { addMolecule } from "../../store/moleculesSlice";
+import { setOrigin } from "../../store/glRefSlice";
 import { libcootApi } from "../../types/libcoot";
 import { moorhen } from "../../types/moorhen";
 import { MoorhenMolecule } from "../../utils/MoorhenMolecule";
@@ -28,6 +29,14 @@ const ImportLigandDictionary = (props: {
     moleculeSelectRef: React.RefObject<HTMLSelectElement>;
     addToRef: React.RefObject<HTMLSelectElement>;
     moleculeSelectValueRef: React.MutableRefObject<string>;
+    // PyKeko: optional placement/fit refs. When set, after creating the ligand
+    // molecule we (a) optionally re-position it at the highest positive Fo-Fc
+    // peak in the active difference map, and (b) optionally run jiggle-fit +
+    // real-space refine against the active map to settle it into the density.
+    // Both refs are read at action time so the underlying state can change
+    // mid-modal without stale-closure issues.
+    placeAtRef?: React.MutableRefObject<"origin" | "peak">;
+    fitToDensityRef?: React.MutableRefObject<boolean>;
 }) => {
     const dispatch = useDispatch();
     const defaultBondSmoothness = useSelector((state: moorhen.State) => state.sceneSettings.defaultBondSmoothness);
@@ -51,6 +60,8 @@ const ImportLigandDictionary = (props: {
         addToMoleculeValueRef,
         menuItemText,
         id,
+        placeAtRef,
+        fitToDensityRef,
     } = props;
 
     const originState = useSelector((state: moorhen.State) => state.glRef.origin);
@@ -91,11 +102,29 @@ const ImportLigandDictionary = (props: {
 
             if (createRef.current) {
                 const instanceName = tlc;
+                // PyKeko: resolve placement BEFORE asking Coot to instantiate
+                // the monomer — if the user picked "Nearest Fo-Fc peak" we
+                // place the ligand directly there, skipping the
+                // origin → moveMoleculeHere round-trip. Falls back to view
+                // centre if no diff map exists or the peak search comes up
+                // empty.
+                let placement = originState.map(c => -c); // default: world-space view centre
+                let pickedPeak: { x: number; y: number; z: number; sigma: number } | null = null;
+                if (placeAtRef?.current === "peak") {
+                    pickedPeak = await pickFoFcPeak();
+                    if (pickedPeak) {
+                        placement = [pickedPeak.x, pickedPeak.y, pickedPeak.z];
+                    } else {
+                        dispatch(enqueueSnackbar({ message: "No Fo-Fc peak found (need a difference map loaded with positive density above the threshold); placing at view centre.", variant: "warning" }));
+                    }
+                }
                 const result = (await commandCentre.current.cootCommand(
                     {
                         returnType: "status",
                         command: "get_monomer_and_position_at",
-                        commandArgs: [instanceName, selectedMoleculeIndex, ...originState.map(coord => -coord)],
+                        // Coot's API expects the NEGATED target — same convention
+                        // every other call site uses (see MoorhenMolecule:1973 etc.).
+                        commandArgs: [instanceName, selectedMoleculeIndex, -placement[0], -placement[1], -placement[2]],
                     },
                     true
                 )) as moorhen.WorkerResponse<number>;
@@ -109,6 +138,20 @@ const ImportLigandDictionary = (props: {
                     await Promise.all([newMolecule.fetchDefaultColourRules(), newMolecule.addDict(fileContent)]);
                     await newMolecule.fetchIfDirtyAndDraw("CBs");
                     dispatch(addMolecule(newMolecule));
+                    // PyKeko: if we placed at a peak, recentre the view there
+                    // so the user can SEE what just landed. Skipped when no
+                    // peak was found — view stays where it was.
+                    if (pickedPeak) {
+                        dispatch(setOrigin([-pickedPeak.x, -pickedPeak.y, -pickedPeak.z]));
+                    }
+                    // PyKeko: if requested, settle the ligand into density.
+                    // Two-step: jiggle-fit with blur (~500 trials, B=200) lands
+                    // it in the local minimum, then RSR (mode ALL) on the
+                    // single residue tightens geometry against the map. Skipped
+                    // gracefully if no active map exists.
+                    if (fitToDensityRef?.current) {
+                        await fitLigandIntoDensity(newMolecule);
+                    }
                     if (addToMoleculeValueRef.current !== -1) {
                         const toMolecule = molecules.find(molecule => molecule.molNo === addToMoleculeValueRef.current);
                         if (typeof toMolecule !== "undefined") {
@@ -125,8 +168,83 @@ const ImportLigandDictionary = (props: {
 
             [...new Set(molNosToUpdate)].map(molNo => dispatch(triggerUpdate(molNo)));
         },
-        [moleculeSelectValueRef, createRef, molecules, commandCentre, tlc, backgroundColor, defaultBondSmoothness, addToMoleculeValueRef]
+        [moleculeSelectValueRef, createRef, molecules, commandCentre, tlc, backgroundColor, defaultBondSmoothness, addToMoleculeValueRef, originState, placeAtRef, fitToDensityRef]
     );
+
+    // PyKeko: pick the highest positive Fo-Fc peak across loaded difference
+    // maps. Returns world-space (x,y,z) + sigma estimate, or null when no
+    // suitable peak exists. Uses Coot's `difference_map_peaks` (the same
+    // command the difference-peak cycler uses for the keyboard 'p' shortcut).
+    const pickFoFcPeak = useCallback(async (): Promise<{ x: number; y: number; z: number; sigma: number } | null> => {
+        const maps = store.getState().maps as moorhen.Map[];
+        const diffMaps = maps.filter(m => (m as any).isDifference);
+        if (diffMaps.length === 0) return null;
+        // Need a protein molecule to anchor the search; pick the first non-
+        // ligand molecule loaded. Bail if none present.
+        const proteinMol = molecules[0];
+        if (!proteinMol) return null;
+        // 3σ is the conventional "interesting" threshold — high enough to
+        // skip ripple noise, low enough that a typical un-modelled ligand
+        // peak (4-8σ) will still come up. Same default the validation tools
+        // use.
+        const sigmaThreshold = 3.0;
+        let best: { x: number; y: number; z: number; sigma: number } | null = null;
+        for (const dmap of diffMaps) {
+            try {
+                const resp = (await commandCentre.current.cootCommand(
+                    {
+                        returnType: "interesting_places_data",
+                        command: "difference_map_peaks",
+                        commandArgs: [(dmap as any).molNo, proteinMol.molNo, sigmaThreshold],
+                    },
+                    false
+                )) as moorhen.WorkerResponse<libcootApi.InterestingPlaceDataJS[]>;
+                const peaks = resp.data.result.result || [];
+                // Positive peaks only — we're placing a ligand into UN-modelled
+                // density, not subtracting modelled-but-absent atoms.
+                for (const p of peaks) {
+                    if ((p as any).featureValue <= 0) continue;
+                    const sigma = (p as any).featureValue; // featureValue is already in σ-normalised units for this call
+                    if (!best || sigma > best.sigma) {
+                        best = { x: (p as any).coordX, y: (p as any).coordY, z: (p as any).coordZ, sigma };
+                    }
+                }
+            } catch (e) {
+                console.warn("difference_map_peaks failed for map", (dmap as any).molNo, e);
+            }
+        }
+        return best;
+    }, [molecules, commandCentre, store]);
+
+    // PyKeko: jiggle-fit-with-blur then RSR the freshly-placed ligand against
+    // the active map. Mirrors Coot 0.9's "fit ligand here" pipeline. Defaults
+    // (B=200, trials=500, scale=3) come from Moorhen's RandomJiggleBlur menu.
+    const fitLigandIntoDensity = useCallback(async (ligand: moorhen.Molecule) => {
+        const activeMap = store.getState().generalStates.activeMap as moorhen.Map;
+        if (!activeMap) {
+            dispatch(enqueueSnackbar({ message: "Skipped auto-fit: no active map. Pick one from the Maps panel and try Ligand → Find ligand…", variant: "info" }));
+            return;
+        }
+        try {
+            await commandCentre.current.cootCommand(
+                {
+                    returnType: "status",
+                    command: "fit_to_map_by_random_jiggle_with_blur_using_cid",
+                    commandArgs: [ligand.molNo, (activeMap as any).molNo, "//", 200, 500, 3],
+                },
+                true
+            );
+            (ligand as any).setAtomsDirty?.(true);
+            await ligand.redraw();
+            // Final RSR pass — same call the Find-ligand modal's Refine button
+            // uses (mode ALL refines every residue in the ligand-only molecule,
+            // which is just our single residue).
+            await (ligand as any).refineResiduesUsingAtomCid?.("//", "ALL", 4000, true);
+            dispatch(enqueueSnackbar({ message: `Ligand auto-fit into density (jiggle + RSR against ${(activeMap as any).name || "active map"}).`, variant: "success" }));
+        } catch (e) {
+            dispatch(enqueueSnackbar({ message: `Auto-fit failed: ${String((e as any)?.message || e)}`, variant: "error" }));
+        }
+    }, [commandCentre, dispatch, store]);
 
     const popoverContent = (
         <>
@@ -201,6 +319,11 @@ export const SMILESToLigand = () => {
     const [conformerCount, setConformerCount] = useState<number>(10);
     const [iterationCount, setIterationCount] = useState<number>(100);
     const [source, setSource] = useState<string>("smiles");
+    // PyKeko (v0.2.12): placement + auto-fit choices for the freshly-created
+    // ligand. Defaults: "origin" + fit-off match upstream Moorhen's behaviour;
+    // "peak" + fit-on is the "Fit ligand here" Coot 0.9 UX.
+    const [placeAt, setPlaceAt] = useState<"origin" | "peak">("origin");
+    const [fitToDensity, setFitToDensity] = useState<boolean>(false);
 
     const createRef = useRef<boolean>(true);
     useEffect(() => { createRef.current = createInstance; }, [createInstance]);
@@ -211,6 +334,12 @@ export const SMILESToLigand = () => {
     const conformerCountRef = useRef<number>(10);
     const iterationCountRef = useRef<number>(100);
     const sourceSelectRef = useRef<HTMLSelectElement | null>(null);
+    // PyKeko: the wrapper reads these at action time, so the popover can be
+    // re-toggled without stale-closure issues during the round-trip.
+    const placeAtRef = useRef<"origin" | "peak">("origin");
+    useEffect(() => { placeAtRef.current = placeAt; }, [placeAt]);
+    const fitToDensityRef = useRef<boolean>(false);
+    useEffect(() => { fitToDensityRef.current = fitToDensity; }, [fitToDensity]);
 
     const collectedProps = {
         smile,
@@ -226,6 +355,8 @@ export const SMILESToLigand = () => {
         addToRef,
         addToMoleculeValueRef,
         moleculeSelectValueRef,
+        placeAtRef,
+        fitToDensityRef,
     };
 
     const smilesToPDB = async (): Promise<string> => {
@@ -349,6 +480,34 @@ export const SMILESToLigand = () => {
                     iterationCountRef.current = parseInt(evt.target.value);
                     setIterationCount(parseInt(evt.target.value));
                 }}
+            />
+            {/* PyKeko: placement + auto-fit controls. Visually grouped so users see them
+                next to "Create instance" — that's the toggle they govern. The labels read
+                imperatively ("Place at…", "Auto-fit…") rather than as nouns so the choices
+                line up grammatically with the rest of the modal. */}
+            <span>
+                Place at...
+                <MoorhenInfoCard
+                    infoText={
+                        <em>
+                            Where to put the new ligand molecule. "View centre" drops it at
+                            the rotation centre (what upstream Moorhen does). "Nearest
+                            Fo-Fc peak" picks the strongest positive blob in the active
+                            difference map (3σ threshold) — Coot 0.9.x's "Fit ligand here"
+                            workflow. Needs a difference map to be loaded; falls back to
+                            view centre if none.
+                        </em>
+                    }
+                />
+            </span>
+            <MoorhenSelect value={placeAt} onChange={e => setPlaceAt(e.target.value as "origin" | "peak")}>
+                <option value={"origin"}>View centre (default)</option>
+                <option value={"peak"}>Nearest positive Fo-Fc peak</option>
+            </MoorhenSelect>
+            <MoorhenToggle
+                label="Auto-fit to active map (jiggle + RSR)"
+                checked={fitToDensity}
+                onChange={() => setFitToDensity(!fitToDensity)}
             />
         </MoorhenStack>
     );
