@@ -760,22 +760,38 @@ const cmdColor = async (cmd: PymolCommand, env: any, registry: PymolRegistry) =>
     const touched = new Set<MoorhenMolecule>();
     for (const { molecule, cid } of targets) {
         // Add to the molecule-level default rules. Used by reps whose
-        // useDefaultColourRules is still true (UI-created reps, freshly added
-        // reps that haven't been individually coloured yet).
+        // useDefaultColourRules is still true — their colourRules array is the
+        // same JS reference as molecule.defaultColourRules (set by
+        // setParentMolecule + re-linked each redraw in applyColourRules), so
+        // pushing here updates them too.
         molecule.addColourRule("cid", cid, hex, [cid, hex]);
-        // INVERSE fix complementing cmdShow's forward inheritance: push the
-        // same rule onto reps that (a) have already gone "custom" so the
-        // molecule-level defaults no longer reach them, AND (b) plausibly
-        // share atoms with the targeted selection. The chain-overlap check
-        // keeps this O(reps-that-actually-care) instead of O(all-reps),
-        // which was triggering Coot worker-queue thrash and 120-second
-        // hangs in scenes with many reps.
+        // INVERSE fix complementing cmdShow's forward inheritance: also push
+        // the rule onto reps that have gone "custom" (useDefault=false), so
+        // the molecule-level addColourRule above doesn't silently miss them.
+        //
+        // v0.2.11: previously we gated this with a cidsOverlap(rep.cid, cid)
+        // check that was meant as an optimization ("don't push a chain-A rule
+        // onto a chain-B-only rep") but turned out to be incorrect for
+        // certain rep CID shapes that didn't match cidChains' regex (full
+        // 4-segment CIDs, residue-range selectors, compound `||` cids). When
+        // the gate filtered out a rep that DID actually contain the
+        // targeted atoms, the rep silently stayed at its old colour — the
+        // bug behind several "color X, chain Y leaves <some-rep> unchanged"
+        // reports. Push unconditionally to every custom rep instead — the
+        // per-rule cost is just an array push; the redraw happens once per
+        // molecule regardless, so this doesn't add Coot-worker round-trips.
+        let customRepsTouched = 0;
         for (const rep of ((molecule.representations as moorhen.MoleculeRepresentation[]) || [])) {
             const isCustom = !!(rep as any).colourRules && (rep as any).colourRules.length > 0 && !(rep as any).useDefaultColourRules;
             if (!isCustom) continue;
-            if (!cidsOverlap((rep as any).cid || "", cid)) continue;
-            try { (rep as any).addColourRule?.("cid", cid, hex, [cid, hex]); } catch { /* skip */ }
+            try {
+                (rep as any).addColourRule?.("cid", cid, hex, [cid, hex]);
+                customRepsTouched++;
+            } catch (e) { console.warn(`[pymol:${cmd.lineNo}] color: push to ${(rep as any).style} ${(rep as any).cid} failed:`, e); }
         }
+        // Diagnostic: surfaces what cmdColor actually did so future "color X,
+        // chain Y didn't work" reports come with the rep enumeration baked in.
+        console.log(`[pymol:${cmd.lineNo}] color ${colorName} → ${molecule.name}: rule cid=${cid} added to molecule defaults; pushed to ${customRepsTouched} custom rep(s) of ${molecule.representations.length} total`);
         touched.add(molecule);
     }
     for (const molecule of touched) {
@@ -1008,16 +1024,13 @@ const cmdSpectrum = async (cmd: PymolCommand, env: any, registry: PymolRegistry)
             // Add to the molecule-level default rules. Reps with
             // useDefaultColourRules=true pick this up at redraw for free.
             molecule.addColourRule("b-factor-normalised", cid, "#888888", [cid], true);
-            // Symmetry fix for the inverse direction — same shape as cmdColor's
-            // smart push. After any prior `color X, sel` has flipped existing
-            // reps to useDefaultColourRules=false, those reps stop consulting
-            // the molecule defaults and a fresh `spectrum b` would silently
-            // miss them. Push the b-factor rule onto each custom rep whose
-            // cid plausibly shares atoms with the selection.
+            // Symmetry fix for the inverse direction — same shape as
+            // cmdColor's smart push (and same v0.2.11 fix: dropped the
+            // cidsOverlap gate, which was over-eagerly filtering out reps
+            // whose CIDs cidChains' regex couldn't read).
             for (const rep of ((molecule.representations as moorhen.MoleculeRepresentation[]) || [])) {
                 const isCustom = !!(rep as any).colourRules && (rep as any).colourRules.length > 0 && !(rep as any).useDefaultColourRules;
                 if (!isCustom) continue;
-                if (!cidsOverlap((rep as any).cid || "", cid)) continue;
                 try { (rep as any).addColourRule?.("b-factor-normalised", cid, "#888888", [cid], true); } catch {}
             }
             touched.add(molecule);
