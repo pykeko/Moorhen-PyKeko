@@ -7,9 +7,11 @@ import { useCommandCentre, usePaths } from "../../InstanceManager";
 import { triggerUpdate } from "../../store/moleculeMapUpdateSlice";
 import { addMolecule } from "../../store/moleculesSlice";
 import { setOrigin } from "../../store/glRefSlice";
+import { removeMolecule } from "../../store/moleculesSlice";
 import { libcootApi } from "../../types/libcoot";
 import { moorhen } from "../../types/moorhen";
 import { MoorhenMolecule } from "../../utils/MoorhenMolecule";
+import { centreOnGemmiAtoms } from "../../utils/utils";
 import { MoorhenButton, MoorhenFileInput, MoorhenSelect, MoorhenTextInput, MoorhenToggle } from "../inputs";
 import { MoorhenMoleculeSelect } from "../inputs";
 import { MoorhenInfoCard, MoorhenStack } from "../interface-base";
@@ -35,7 +37,7 @@ const ImportLigandDictionary = (props: {
     // real-space refine against the active map to settle it into the density.
     // Both refs are read at action time so the underlying state can change
     // mid-modal without stale-closure issues.
-    placeAtRef?: React.MutableRefObject<"origin" | "peak">;
+    placeAtRef?: React.MutableRefObject<"molecule_centre" | "rotation_centre" | "peak">;
     fitToDensityRef?: React.MutableRefObject<boolean>;
 }) => {
     const dispatch = useDispatch();
@@ -107,19 +109,24 @@ const ImportLigandDictionary = (props: {
                 // `get_monomer_and_position_at` takes world-space directly
                 // (the upstream call site `commandArgs: [..., ...originState.map(c => -c)]`
                 // works because that flips the already-negated `originState`
-                // BACK to world — net effect: pass world coords). Falls back
-                // to view centre if no diff map exists or the peak search
-                // comes up empty.
+                // BACK to world — net effect: pass world coords).
                 //
-                // **v0.2.12 bug fixed in v0.2.14**: I had `placement` in
-                // world space and then ALSO negated it in commandArgs below,
-                // so Coot received `-world` and placed the ligand at the
-                // mirror across (0,0,0) — far from the protein. Symptom:
-                // "the ligand ends up in the same spot every time, very
-                // distant from where it was intended" regardless of which
-                // Place-at option was chosen, because the peak path silently
-                // falls back to view-centre when no diff map is loaded.
-                let placementWorld: [number, number, number] = [-originState[0], -originState[1], -originState[2]];
+                // v0.2.15: default placement is now the **centre of the
+                // active protein molecule** rather than the camera's rotation
+                // centre — `originState` ≠ the structure's centre when the
+                // user hasn't done an explicit "centre on" (e.g. on `pykeko
+                // 7sj3` startup the rotation centre stays near the unit-cell
+                // origin even though the camera auto-fits to the protein).
+                // Result in v0.2.14: ligand correctly landed at the rotation
+                // centre, which was often dozens of Å from the protein.
+                // Reported as "partially overlaps with positive density but
+                // nowhere near the protein molecules".
+                //
+                // v0.2.12 bug fixed in v0.2.14: had `placement` in world
+                // space and then ALSO negated it in commandArgs below, so
+                // Coot received `-world` and placed the ligand at the mirror
+                // across (0,0,0).
+                let placementWorld: [number, number, number] = await computePlacement();
                 let pickedPeak: { x: number; y: number; z: number; sigma: number } | null = null;
                 if (placeAtRef?.current === "peak") {
                     pickedPeak = await pickFoFcPeak();
@@ -129,7 +136,7 @@ const ImportLigandDictionary = (props: {
                         // negated input).
                         placementWorld = [pickedPeak.x, pickedPeak.y, pickedPeak.z];
                     } else {
-                        dispatch(enqueueSnackbar({ message: "No Fo-Fc peak found (need a difference map loaded with positive density above the threshold); placing at view centre.", variant: "warning" }));
+                        dispatch(enqueueSnackbar({ message: "No Fo-Fc peak found (need a difference map loaded with positive density above the threshold); falling back to the active molecule's centre.", variant: "warning" }));
                     }
                 }
                 const result = (await commandCentre.current.cootCommand(
@@ -154,12 +161,11 @@ const ImportLigandDictionary = (props: {
                     await Promise.all([newMolecule.fetchDefaultColourRules(), newMolecule.addDict(fileContent)]);
                     await newMolecule.fetchIfDirtyAndDraw("CBs");
                     dispatch(addMolecule(newMolecule));
-                    // PyKeko: if we placed at a peak, recentre the view there
-                    // so the user can SEE what just landed. Skipped when no
-                    // peak was found — view stays where it was.
-                    if (pickedPeak) {
-                        dispatch(setOrigin([-pickedPeak.x, -pickedPeak.y, -pickedPeak.z]));
-                    }
+                    // PyKeko: re-centre the view on what just landed so the
+                    // user can see it without hunting. Snapping to the
+                    // placement target (rather than the resulting ligand atoms,
+                    // which are around the placement target anyway) is fine.
+                    dispatch(setOrigin([-placementWorld[0], -placementWorld[1], -placementWorld[2]]));
                     // PyKeko: if requested, settle the ligand into density.
                     // Two-step: jiggle-fit with blur (~500 trials, B=200) lands
                     // it in the local minimum, then RSR (mode ALL) on the
@@ -175,6 +181,18 @@ const ImportLigandDictionary = (props: {
                             const otherMolecules = [newMolecule];
                             await toMolecule.mergeMolecules(otherMolecules, true);
                             await toMolecule.redraw();
+                            // PyKeko v0.2.15: the user picked "...add to <X>",
+                            // not "...add to X AND keep a standalone". Upstream
+                            // mergeMolecules(otherMolecules, doHide=true) only
+                            // hides the standalone; it stays in moleculeList
+                            // visible:false, looks like a duplicate on the
+                            // Models panel and re-shows on the next redraw.
+                            // Actually delete it so the merge is the *only*
+                            // copy of the ligand the user has.
+                            try {
+                                await (newMolecule as any).delete?.();
+                            } catch { /* best effort — delete failed = standalone stays hidden but present */ }
+                            dispatch(removeMolecule(newMolecule));
                         } else {
                             await newMolecule.redraw();
                         }
@@ -186,6 +204,51 @@ const ImportLigandDictionary = (props: {
         },
         [moleculeSelectValueRef, createRef, molecules, commandCentre, tlc, backgroundColor, defaultBondSmoothness, addToMoleculeValueRef, originState, placeAtRef, fitToDensityRef]
     );
+
+    // PyKeko v0.2.15: resolve the default placement target — the centre of
+    // the active protein molecule's atoms (NOT the camera's rotation centre).
+    // Sequence: (1) prefer the molecule the user picked in "Make monomer
+    // available to" if that's a real molecule; (2) else the first loaded
+    // molecule; (3) else fall back to the camera rotation centre (which is
+    // what `originState.map(c => -c)` resolves to, matching pre-v0.2.15
+    // behaviour for the empty-scene corner case).
+    const computePlacement = useCallback(async (): Promise<[number, number, number]> => {
+        const fallbackToRotationCentre = (): [number, number, number] =>
+            [-originState[0], -originState[1], -originState[2]];
+        if (placeAtRef?.current === "rotation_centre") {
+            return fallbackToRotationCentre();
+        }
+        // Resolve which molecule to centre on.
+        const pickedMolNo = (() => {
+            const v = moleculeSelectValueRef.current;
+            if (v === null || v === undefined || v === "" || v === "-999999") return null;
+            const n = parseInt(v);
+            return Number.isFinite(n) ? n : null;
+        })();
+        const target = pickedMolNo !== null
+            ? molecules.find(m => m.molNo === pickedMolNo)
+            : (molecules.find(m => !!m && (m as any).atomCount > 0) ?? molecules[0]);
+        if (!target) return fallbackToRotationCentre();
+        try {
+            const atoms = await (target as any).gemmiAtomsForCid?.("/*/*/*/*");
+            if (atoms && atoms.length > 0) {
+                // GOTCHA: centreOnGemmiAtoms returns the **negated** centroid
+                // (it returns `[-x/n, -y/n, -z/n]`, see utils.ts). The name is
+                // misleading — the returned value is what you'd pass to
+                // `setOrigin(...)`, which is the negated-world convention.
+                // We need world-space coords for get_monomer_and_position_at,
+                // so negate it back. (This was the v0.2.15-pre-build bug:
+                // CDP probe showed Coot receiving (-31, 35, -0.01) instead of
+                // (31, -35, 0.01) — same mirror-across-origin symptom as
+                // v0.2.12, different source.)
+                const [nx, ny, nz] = centreOnGemmiAtoms(atoms);
+                return [-nx, -ny, -nz];
+            }
+        } catch (e) {
+            console.warn("computePlacement: gemmiAtomsForCid failed on", target.name, e);
+        }
+        return fallbackToRotationCentre();
+    }, [molecules, originState, moleculeSelectValueRef, placeAtRef]);
 
     // PyKeko: pick the highest positive Fo-Fc peak across loaded difference
     // maps. Returns world-space (x,y,z) + sigma estimate, or null when no
@@ -343,9 +406,12 @@ export const SMILESToLigand = () => {
     const [iterationCount, setIterationCount] = useState<number>(100);
     const [source, setSource] = useState<string>("smiles");
     // PyKeko (v0.2.12): placement + auto-fit choices for the freshly-created
-    // ligand. Defaults: "origin" + fit-off match upstream Moorhen's behaviour;
-    // "peak" + fit-on is the "Fit ligand here" Coot 0.9 UX.
-    const [placeAt, setPlaceAt] = useState<"origin" | "peak">("origin");
+    // ligand. v0.2.15 default: "molecule_centre" — the centroid of the
+    // active protein's atoms. v0.2.12-v0.2.14 defaulted to "rotation_centre"
+    // (the camera's pivot) which is often not on the protein on freshly-
+    // loaded scenes; users reported "ligand lands nowhere near the protein".
+    // "peak" + fit-on is the Coot 0.9 "Fit ligand here" UX.
+    const [placeAt, setPlaceAt] = useState<"molecule_centre" | "rotation_centre" | "peak">("molecule_centre");
     const [fitToDensity, setFitToDensity] = useState<boolean>(false);
 
     const createRef = useRef<boolean>(true);
@@ -359,7 +425,7 @@ export const SMILESToLigand = () => {
     const sourceSelectRef = useRef<HTMLSelectElement | null>(null);
     // PyKeko: the wrapper reads these at action time, so the popover can be
     // re-toggled without stale-closure issues during the round-trip.
-    const placeAtRef = useRef<"origin" | "peak">("origin");
+    const placeAtRef = useRef<"molecule_centre" | "rotation_centre" | "peak">("molecule_centre");
     useEffect(() => { placeAtRef.current = placeAt; }, [placeAt]);
     const fitToDensityRef = useRef<boolean>(false);
     useEffect(() => { fitToDensityRef.current = fitToDensity; }, [fitToDensity]);
@@ -513,18 +579,24 @@ export const SMILESToLigand = () => {
                 <MoorhenInfoCard
                     infoText={
                         <em>
-                            Where to put the new ligand molecule. "View centre" drops it at
-                            the rotation centre (what upstream Moorhen does). "Nearest
-                            Fo-Fc peak" picks the strongest positive blob in the active
-                            difference map (3σ threshold) — Coot 0.9.x's "Fit ligand here"
-                            workflow. Needs a difference map to be loaded; falls back to
-                            view centre if none.
+                            Where to put the new ligand molecule.
+                            "Active molecule centre" (default, v0.2.15+) places it at the
+                            centroid of the selected protein's atoms — what you usually
+                            want when adding a ligand to a structure.
+                            "View centre" uses the camera's rotation centre (what upstream
+                            Moorhen / v0.2.12-0.2.14 did) — only useful if you've explicitly
+                            navigated the camera to where the ligand should go.
+                            "Nearest Fo-Fc peak" picks the strongest positive blob in the
+                            active difference map (3σ threshold) — Coot 0.9.x's "Fit ligand
+                            here" workflow. Falls back to the molecule centre if no diff
+                            map is loaded.
                         </em>
                     }
                 />
             </span>
-            <MoorhenSelect value={placeAt} onChange={e => setPlaceAt(e.target.value as "origin" | "peak")}>
-                <option value={"origin"}>View centre (default)</option>
+            <MoorhenSelect value={placeAt} onChange={e => setPlaceAt(e.target.value as "molecule_centre" | "rotation_centre" | "peak")}>
+                <option value={"molecule_centre"}>Active molecule centre (default)</option>
+                <option value={"rotation_centre"}>View centre</option>
                 <option value={"peak"}>Nearest positive Fo-Fc peak</option>
             </MoorhenSelect>
             <MoorhenToggle
