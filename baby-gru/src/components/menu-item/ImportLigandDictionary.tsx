@@ -103,17 +103,31 @@ const ImportLigandDictionary = (props: {
             if (createRef.current) {
                 const instanceName = tlc;
                 // PyKeko: resolve placement BEFORE asking Coot to instantiate
-                // the monomer — if the user picked "Nearest Fo-Fc peak" we
-                // place the ligand directly there, skipping the
-                // origin → moveMoleculeHere round-trip. Falls back to view
-                // centre if no diff map exists or the peak search comes up
-                // empty.
-                let placement = originState.map(c => -c); // default: world-space view centre
+                // the monomer. `placementWorld` is in world-space coordinates;
+                // `get_monomer_and_position_at` takes world-space directly
+                // (the upstream call site `commandArgs: [..., ...originState.map(c => -c)]`
+                // works because that flips the already-negated `originState`
+                // BACK to world — net effect: pass world coords). Falls back
+                // to view centre if no diff map exists or the peak search
+                // comes up empty.
+                //
+                // **v0.2.12 bug fixed in v0.2.14**: I had `placement` in
+                // world space and then ALSO negated it in commandArgs below,
+                // so Coot received `-world` and placed the ligand at the
+                // mirror across (0,0,0) — far from the protein. Symptom:
+                // "the ligand ends up in the same spot every time, very
+                // distant from where it was intended" regardless of which
+                // Place-at option was chosen, because the peak path silently
+                // falls back to view-centre when no diff map is loaded.
+                let placementWorld: [number, number, number] = [-originState[0], -originState[1], -originState[2]];
                 let pickedPeak: { x: number; y: number; z: number; sigma: number } | null = null;
                 if (placeAtRef?.current === "peak") {
                     pickedPeak = await pickFoFcPeak();
                     if (pickedPeak) {
-                        placement = [pickedPeak.x, pickedPeak.y, pickedPeak.z];
+                        // difference_map_peaks already returns world-space
+                        // coords (same frame as moveMoleculeHere / setOrigin's
+                        // negated input).
+                        placementWorld = [pickedPeak.x, pickedPeak.y, pickedPeak.z];
                     } else {
                         dispatch(enqueueSnackbar({ message: "No Fo-Fc peak found (need a difference map loaded with positive density above the threshold); placing at view centre.", variant: "warning" }));
                     }
@@ -122,9 +136,11 @@ const ImportLigandDictionary = (props: {
                     {
                         returnType: "status",
                         command: "get_monomer_and_position_at",
-                        // Coot's API expects the NEGATED target — same convention
-                        // every other call site uses (see MoorhenMolecule:1973 etc.).
-                        commandArgs: [instanceName, selectedMoleculeIndex, -placement[0], -placement[1], -placement[2]],
+                        // World-space coords — no negation here. (`originState`
+                        // is the negated rotation centre; the upstream code
+                        // applies `.map(c => -c)` to flip it to world before
+                        // calling — equivalent to what we pass here.)
+                        commandArgs: [instanceName, selectedMoleculeIndex, placementWorld[0], placementWorld[1], placementWorld[2]],
                     },
                     true
                 )) as moorhen.WorkerResponse<number>;
@@ -204,9 +220,16 @@ const ImportLigandDictionary = (props: {
                 // density, not subtracting modelled-but-absent atoms.
                 for (const p of peaks) {
                     if ((p as any).featureValue <= 0) continue;
-                    const sigma = (p as any).featureValue; // featureValue is already in σ-normalised units for this call
-                    if (!best || sigma > best.sigma) {
-                        best = { x: (p as any).coordX, y: (p as any).coordY, z: (p as any).coordZ, sigma };
+                    // `featureValue` is in raw map-density units, NOT σ.
+                    // The σ threshold passed to difference_map_peaks already
+                    // filtered everything below 3σ before we got the list, so
+                    // ranking by raw featureValue == ranking by σ here (both
+                    // monotonic since `σ = featureValue / map_rmsd`). We
+                    // stash it as `sigma` for the comparator's name without
+                    // bothering to divide.
+                    const score = (p as any).featureValue;
+                    if (!best || score > best.sigma) {
+                        best = { x: (p as any).coordX, y: (p as any).coordY, z: (p as any).coordZ, sigma: score };
                     }
                 }
             } catch (e) {
