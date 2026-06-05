@@ -411,6 +411,7 @@ const structureBranch = (m: MvsMoleculeInput) => {
 const isoSurface = (
     contour: { absolute: number } | { sigma: number },
     color: string,
+    clipCenter?: [number, number, number] | null,
 ) => {
     const params: any = {
         type: "isosurface",
@@ -421,10 +422,36 @@ const isoSurface = (
     else params.relative_isovalue = contour.sigma;
     // MVS distinguishes structure `representation` from `volume_representation`
     // — they take different param schemas. Use the volume one here.
-    return node("volume_representation", params, [ node("color", { color }) ]);
+    //
+    // PyKeko 0.2.16: when we know the export-time camera target, emit a
+    // declarative `clip` child node so the recipient viewer (whether ours or
+    // any other MVS-aware tool) sees a sensibly-cropped sphere of density
+    // BEFORE any post-load JS runs. wireCameraFollowDensity in our
+    // viewer-template then takes over and re-anchors on every camera move.
+    // Per molstar/molstar#1844 (dsehnal), MVS-layer clip uses radius
+    // directly — no *2 half-scale gotcha that the raw transformer's
+    // clip.objects[].scale slot has. radius=20 matches the camera-follow
+    // radius in App.tsx, leaving the 40Å embedded cube as a comfortable
+    // wander region.
+    const reps: any[] = [ node("color", { color }) ];
+    if (clipCenter) {
+        reps.push(node("clip", {
+            type: "sphere",
+            center: clipCenter,
+            radius: CLIP_RADIUS_ANGSTROMS,
+            invert: true,        // keep INSIDE the sphere, discard outside
+            variant: "pixel",    // per-fragment clipping; smoother than "object"
+        }));
+    }
+    return node("volume_representation", params, reps);
 };
 
-const volumeBranch = (m: MvsMapInput) => {
+// Radius of the sphere clip baked into each volume_representation at export
+// time. wireCameraFollowDensity uses the SAME number on the recipient side so
+// the static initial clip and the camera-follow update agree.
+const CLIP_RADIUS_ANGSTROMS = 20;
+
+const volumeBranch = (m: MvsMapInput, clipCenter?: [number, number, number] | null) => {
     const dataUrl = "data:application/octet-stream;base64," + bytesToBase64(m.bytes);
     const haveAbs = m.contourAbsolute !== null && m.contourAbsolute !== undefined;
     // For diff maps without an explicit contour, default to 3σ; for 2Fo-Fc, 1.5σ.
@@ -438,11 +465,11 @@ const volumeBranch = (m: MvsMapInput) => {
 
     const reps = m.isDifference
         ? [
-              isoSurface(contourPos, m.positiveColor ?? "#00cc44"),  // +Fo-Fc — green
-              isoSurface(contourNeg, m.negativeColor ?? "#cc0033"),  // -Fo-Fc — red
+              isoSurface(contourPos, m.positiveColor ?? "#00cc44", clipCenter),  // +Fo-Fc — green
+              isoSurface(contourNeg, m.negativeColor ?? "#cc0033", clipCenter),  // -Fo-Fc — red
           ]
         : [
-              isoSurface(contourPos, m.color ?? "#3a86ff"),           // 2mFo-DFc — blue
+              isoSurface(contourPos, m.color ?? "#3a86ff", clipCenter),           // 2mFo-DFc — blue
           ];
 
     return node("download", { url: dataUrl }, [
@@ -454,10 +481,15 @@ const volumeBranch = (m: MvsMapInput) => {
 
 export function buildMvsJson(opts: MvsExportOptions): string {
     const bg = opts.backgroundColor || "#000000";
+    // PyKeko 0.2.16: when a camera is captured, feed its target into the
+    // volume branches so they emit a declarative sphere clip centered there
+    // (see isoSurface). Falls back to no-clip when no camera (the volume
+    // shows uncropped — that's the previous behaviour).
+    const clipCenter: [number, number, number] | null = opts.camera?.target ?? null;
     const children: any[] = [
         node("canvas", { background_color: bg }),
         ...opts.molecules.map(m => structureBranch(m)),
-        ...(opts.maps || []).map(volumeBranch),
+        ...(opts.maps || []).map(m => volumeBranch(m, clipCenter)),
     ];
     if (opts.camera) {
         // Camera is a root-level node, not nested inside the data branches.
