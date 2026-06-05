@@ -128,6 +128,13 @@ export const ExportMvsViewer = () => {
                         style: r.style,
                         cid: r.cid,
                         colourRules: rulesPair(r.colourRules),
+                        // Pass through bondOptions.width so the builder can derive an MVS
+                        // ball_and_stick `size_factor` for thin-bond ("lines") reps. v0.2.17:
+                        // before this, PyMOL "lines" and "sticks" both exported as default-
+                        // thickness sticks because CBs → ball_and_stick collapsed the
+                        // distinction (the in-app translator distinguishes them via
+                        // bondOptions.width = 0.03 vs the default 0.10).
+                        bondWidth: typeof r?.bondOptions?.width === "number" ? r.bondOptions.width : undefined,
                     }));
                 return {
                     name: m.name,

@@ -35,6 +35,14 @@ export interface MvsRepInput {
     /** Colour rules attached to THIS rep (may be empty — fall back to the
      *  molecule's defaultColourRules). */
     colourRules?: MvsColourRule[];
+    /** Per-rep bond width in Å (from rep.bondOptions.width). PyKeko 0.2.17:
+     *  Moorhen's CBs style covers BOTH PyMOL "sticks" and "lines" — the only
+     *  difference is the bond width (default 0.10 for sticks, 0.03 for
+     *  lines). MVS's ball_and_stick takes a `size_factor` that scales all
+     *  visuals; we derive it from width/defaultWidth so the exported HTML
+     *  renders thin geometry when the source rep was a "lines" PyMOL show.
+     *  Optional — omitted reps render at MVS default thickness (size_factor=1). */
+    bondWidth?: number;
 }
 
 export interface MvsMoleculeInput {
@@ -346,8 +354,26 @@ const repToComponent = (
     if (colorChildren.length === 0 && chains.length > 0) colorChildren = chainPaletteColorNodes(chains);
     if (colorChildren.length === 0) colorChildren = [node("color", { color: "#888888" })];
 
+    // PyKeko 0.2.17: for ball_and_stick mvsType, derive size_factor from the
+    // source rep's bondOptions.width so PyMOL "lines" (translator sets
+    // bondWidth=0.03 vs sticks' 0.10 default) export as visibly-thinner
+    // geometry instead of identical thick sticks. Linear ratio against
+    // Moorhen's default width (0.10), floored at 0.2 so even very thin
+    // widths still leave the bonds picky-pickable, and capped at 1.0 so
+    // we never INFLATE relative to MVS default. Other mvsTypes ignore the
+    // field (cartoon doesn't have a meaningful size_factor for our use).
+    const repParams: any = { type: mapping.mvsType };
+    if (mapping.mvsType === "ball_and_stick" && typeof rep.bondWidth === "number") {
+        const ratio = rep.bondWidth / MOORHEN_DEFAULT_BOND_WIDTH_ANGSTROMS;
+        if (ratio < 0.95) {
+            // Only emit when meaningfully below default — saves bytes and avoids
+            // accidentally shrinking reps with a slightly-tweaked width.
+            repParams.size_factor = Math.max(0.2, Math.min(1.0, ratio));
+        }
+    }
+
     return node("component", { selector: componentSelector }, [
-        node("representation", { type: mapping.mvsType }, colorChildren),
+        node("representation", repParams, colorChildren),
     ]);
 };
 
@@ -450,6 +476,12 @@ const isoSurface = (
 // time. wireCameraFollowDensity uses the SAME number on the recipient side so
 // the static initial clip and the camera-follow update agree.
 const CLIP_RADIUS_ANGSTROMS = 20;
+
+// Moorhen's default cootBondOptions.width (MoorhenMolecule constructor).
+// Anything materially smaller than this means the rep was thinned for a
+// "lines" look (translator sets LINES_BOND_WIDTH=0.03). Used to derive MVS
+// ball_and_stick `size_factor` at export time.
+const MOORHEN_DEFAULT_BOND_WIDTH_ANGSTROMS = 0.1;
 
 const volumeBranch = (m: MvsMapInput, clipCenter?: [number, number, number] | null) => {
     const dataUrl = "data:application/octet-stream;base64," + bytesToBase64(m.bytes);
