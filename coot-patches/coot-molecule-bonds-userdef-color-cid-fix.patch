@@ -1,0 +1,92 @@
+--- a/api/coot-molecule-bonds.cc
++++ b/api/coot-molecule-bonds.cc
+@@ -148,28 +148,71 @@
+             int colour_index = rc.second; // change type
+             int selHnd = mol->NewSelection(); // d
+ 
++            // ====== PyKeko patch (selector fix) ======
++            // mmdb-side CID parser handles Moorhen-shorthand CIDs ("//A",
++            // "/1/A/*/*" etc.) incorrectly — every form resolves to atoms
++            // in the same single chain regardless of which chain ID is
++            // spelled, making user-defined colour rules effectively inert
++            // when more than one chain is involved. CDP-verified with 13
++            // CID variants in 7sj3: all coloured chain B. Bypass mmdb for
++            // whole-chain CIDs by walking the model manually; fall back to
++            // mmdb only when residue-/atom-level CID hints are present.
++            auto pykeko_extract_chain_id = [](const std::string &c) -> std::string {
++                if (c.empty() || c[0] != '/') return "";
++                std::vector<std::string> toks;
++                std::string cur;
++                for (char ch : c) {
++                    if (ch == '/') { toks.push_back(cur); cur.clear(); }
++                    else cur += ch;
++                }
++                if (!cur.empty()) toks.push_back(cur);
++                if (toks.size() < 3) return "";
++                const std::string &chain_tok = toks[2];
++                if (chain_tok == "*" || chain_tok.empty()) return "";
++                for (size_t i = 3; i < toks.size(); ++i)
++                    if (toks[i] != "*" && !toks[i].empty()) return "";
++                return chain_tok;
++            };
++            std::string pykeko_chain = pykeko_extract_chain_id(cid);
+             mmdb::Atom **SelAtoms = nullptr;
+             int nSelAtoms = 0;
+-            mol->Select(selHnd, mmdb::STYPE_ATOM, cid.c_str(), mmdb::SKEY_NEW);
+-            mol->GetSelIndex(selHnd, SelAtoms, nSelAtoms);
+-            if (nSelAtoms > 0) {
+-               for(int iat=0; iat<nSelAtoms; iat++) {
+-                  mmdb:: Atom *at = SelAtoms[iat];
+-                  std::string element(at->element);
+-                  if (element == " C" || colour_applies_to_non_carbon_atoms_also) {
+-                     int ierr = at->PutUDData(udd_handle, colour_index);
+-                     if (ierr != mmdb::UDDATA_Ok) {
+-                        std::cout << "WARNING:: in set_user_defined_atom_colour_by_residue() problem setting udd on atom "
+-                                  << coot::atom_spec_t(at) << std::endl;
+-                     } else {
+-                        if (false)
+-                           std::cout << "debug:: set_user_defined_atom_colour_by_residue() sets user-define atom colour index "
+-                                     << "of atom " << coot::atom_spec_t(at) << "to " << colour_index << std::endl;
+-                     }
+-                  }
+-               }
++            std::vector<mmdb::Atom*> pykeko_atoms;
++            if (!pykeko_chain.empty()) {
++                for (int imod = 1; imod <= mol->GetNumberOfModels(); ++imod) {
++                    mmdb::Model *mdl = mol->GetModel(imod);
++                    if (!mdl) continue;
++                    int nc = mdl->GetNumberOfChains();
++                    for (int ic = 0; ic < nc; ++ic) {
++                        mmdb::Chain *ch = mdl->GetChain(ic);
++                        if (!ch) continue;
++                        const char *cid_cstr = ch->GetChainID();
++                        if (!cid_cstr || pykeko_chain != cid_cstr) continue;
++                        int nr = ch->GetNumberOfResidues();
++                        for (int ir = 0; ir < nr; ++ir) {
++                            mmdb::Residue *r = ch->GetResidue(ir);
++                            if (!r) continue;
++                            int na = r->GetNumberOfAtoms();
++                            for (int ia = 0; ia < na; ++ia) {
++                                mmdb::Atom *at = r->GetAtom(ia);
++                                if (at) pykeko_atoms.push_back(at);
++                            }
++                        }
++                    }
++                }
++                nSelAtoms = static_cast<int>(pykeko_atoms.size());
++            } else {
++                mol->Select(selHnd, mmdb::STYPE_ATOM, cid.c_str(), mmdb::SKEY_NEW);
++                mol->GetSelIndex(selHnd, SelAtoms, nSelAtoms);
+             }
++            for (int iat = 0; iat < nSelAtoms; ++iat) {
++                mmdb::Atom *at = pykeko_chain.empty() ? SelAtoms[iat] : pykeko_atoms[iat];
++                std::string element(at->element);
++                if (element == " C" || colour_applies_to_non_carbon_atoms_also) {
++                    at->PutUDData(udd_handle, colour_index);
++                }
++            }
+             mol->DeleteSelection(selHnd);
++            // ====== /PyKeko patch ======
+          }
+       }
+    }

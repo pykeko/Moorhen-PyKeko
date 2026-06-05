@@ -1341,6 +1341,27 @@ export class MoleculeRepresentation {
     async getCootSelectionBondBuffers(name: string, cid: null | string): Promise<libcootApi.InstancedMeshJS[]> {
         const drawMissingLoops = this.parentMolecule.store.getState().sceneSettings.drawMissingLoops;
         console.log("getCootSelectionBondBuffers", drawMissingLoops);
+        // PyKeko v0.2.18: flip set_use_bespoke_carbon_atom_colour right here, on every
+        // bond-mesh fetch. The toggle activates user-defined-colour mode inside
+        // get_bonds_mesh_*(); without it, those calls render via
+        // do_colour_by_dictionary_and_by_chain_bonds_carbons_only regardless of any
+        // set_user_defined_bond_colours / set_user_defined_atom_colour_by_selection that
+        // already happened — i.e. PyMOL `color` commands were silently inert on bond reps
+        // (only the initial default chain rules showed up because they're baked into the
+        // mesh function itself). Putting it here (rather than in applyColourRules) means
+        // it always runs in the SAME Coot worker turn as the mesh fetch, so the toggle
+        // can't be reset by some other path between the two. Upstream Moorhen never
+        // called this anywhere — grep -r "bespoke" baby-gru/src returns 0 hits before
+        // this change.
+        await this.commandCentre.current.cootCommand(
+            {
+                message: "coot_command",
+                command: "set_use_bespoke_carbon_atom_colour",
+                returnType: "status",
+                commandArgs: [this.parentMolecule.molNo, true],
+            },
+            false
+        );
         const bondArgs = this.getBondArgs(name);
         let meshCommand: Promise<moorhen.WorkerResponse<libcootApi.InstancedMeshJS>>;
         const returnType = name === "VdwSpheres" ? "instanced_mesh_perfect_spheres" : "instanced_mesh";

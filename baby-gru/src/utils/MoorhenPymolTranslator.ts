@@ -759,6 +759,20 @@ const cmdColor = async (cmd: PymolCommand, env: any, registry: PymolRegistry) =>
     const targets = await resolveSelection(selArg, env, registry);
     const touched = new Set<MoorhenMolecule>();
     for (const { molecule, cid } of targets) {
+        // v0.2.18: REMOVE any prior rule whose cid is identical to ours BEFORE
+        // appending. Coot's `set_user_defined_atom_colour_by_selection` processes
+        // the indexed-selection vector in order and (per CDP testing) uses
+        // FIRST-MATCH-wins semantics for the atom's user-defined-colour index —
+        // not last-wins. So an earlier rule for the same cid (e.g. the chain-A
+        // default loaded at molecule load) keeps the carbon palette slot and a
+        // newly-appended cid-A rule is silently shadowed. Deduplicating means
+        // `color magenta, chain A` actually overrides chain A's default tan.
+        const defaults = (molecule as any).defaultColourRules as { ruleType: string; cid: string }[] | undefined;
+        if (Array.isArray(defaults)) {
+            for (let i = defaults.length - 1; i >= 0; i--) {
+                if (defaults[i].cid === cid) defaults.splice(i, 1);
+            }
+        }
         // Add to the molecule-level default rules. Used by reps whose
         // useDefaultColourRules is still true — their colourRules array is the
         // same JS reference as molecule.defaultColourRules (set by
