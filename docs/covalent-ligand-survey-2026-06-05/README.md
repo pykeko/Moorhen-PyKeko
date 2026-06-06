@@ -90,6 +90,17 @@ comment.
    one entry produces multiple hits; the `count` columns reflect contacts,
    not unique ligand-entries.
 
+## Sub-inventories (target-specific follow-on work)
+
+Three sub-directories landed alongside this README, generated 2026-06-06
+as the F-family architecture was validated against specific kinase targets:
+
+| Sub-dir | Purpose | Headline |
+|---|---|---|
+| [`btk-8fd9-8ff0-geom/`](btk-8fd9-8ff0-geom/) | Direct geometry analysis of the two canonical BTK + butynamide PDB entries against plan-doc Appendix A.6 targets | 8FD9 (1.70 Å) has τ = −89° and pyramidalized Cβ; 8FF0 (2.60 Å) is clean syn τ = +2.3°; both have planarity RMS ~0.48 Å (10× worse than properly-refined target). High-res missing-link refinement is *worse* than low-res. |
+| [`btk-egfr-inventory/`](btk-egfr-inventory/) | BTK + EGFR Cys-covalent PDB inventory, classified | 32 BTK + 120 EGFR entries; **27 F2 (canonical + extended-methyl) — the user's lab niche**; recommended first-10 re-refinement validation set |
+| [`fgfr-inventory/`](fgfr-inventory/) | FGFR1/2/3/4 same analysis | **Zero F2 entries** across 58 FGFR Cys-covalent deposits; Futibatinib reclassified F1 (not F2 as initially assumed); FGFR4 Cys552 is the unique selectivity opportunity |
+
 ## Status
 
 - Plan-doc updated with empirical numbers ([`../covalent-ligand-plan.md` §2.0](../covalent-ligand-plan.md)).

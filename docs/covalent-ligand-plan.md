@@ -1018,6 +1018,14 @@ days of model-prep across a series into minutes.
   tie-breaking, and the family-of-functional-groups conclusion that endorses
   our F-series architecture. Read before writing any external-tool integration
   in PyKeko.
+- **Zhao & Bourne (2024).** "Exploring Extended Warheads toward Developing
+  Cysteine-Targeted Covalent Kinase Inhibitors." *J. Chem. Inf. Model.*
+  64, 9517–9527. DOI 10.1021/acs.jcim.4c00890. — Medchem-side companion to
+  this crystallographic plan. 16,961 CKI data points, 30 warhead types,
+  1,344 adjacent fragments across 146 kinases with ATP-pocket Cys. Maps
+  directly onto our F-series families and confirms the extended-methyl
+  warhead niche (afatinib / neratinib / dacomitinib / mobocertinib) is
+  empirically dominant in the EGFR-targeting clinical literature.
 - 8FD9 (BTK + acalabrutinib, 1.70 Å, the only deposited XQQ entry):
   https://www.rcsb.org/structure/8FD9
 - 8FF0 (BTK + tirabrutinib, 7GB ligand): https://www.rcsb.org/structure/8FF0

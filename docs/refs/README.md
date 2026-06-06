@@ -90,6 +90,29 @@ writing any external-tool integration code in PyKeko** — it's the spec
 sheet for what `_struct_conn` means at refinement time, including the
 chirality + torsion tie-breaking for multi-link-match disambiguation.
 
+### Medchem warhead taxonomy → `extended-warheads-cys-kinase-inhibitors.pdf`
+
+> **Zhao, Z. & Bourne, P.E. (2024).** "Exploring Extended Warheads toward
+> Developing Cysteine-Targeted Covalent Kinase Inhibitors."
+> *J. Chem. Inf. Model.* **64**, 9517–9527.
+
+- DOI: [10.1021/acs.jcim.4c00890](https://doi.org/10.1021/acs.jcim.4c00890)
+- ACS Publications (CC-BY open access)
+- Authors at UVA School of Data Science
+
+**What it's for:** the medchem-side companion to the crystallographic
+plan. Curates **16,961 CKI data points across 12,381 unique covalent
+kinase inhibitors targeting 146 kinases** with ATP-pocket Cys. Defines
+**30 commonly used warhead types** (1–22 irreversible, 23–30 reversible)
+plus **1,344 unique adjacent fragments** — the "extended warheads" =
+warhead + adjacent fragment that map directly onto our F-series. Lists
+the 10 FDA-approved CKIs (Acalabrutinib + Tirabrutinib + Futibatinib are
+the ynamide/butynamide-class ones; Afatinib + Neratinib + Dacomitinib +
+Mobocertinib are the extended-methyl 4-NMe₂/piperidine-but-2-enamide
+class — directly the lab's niche). Cross-references nicely with the
+2026-06-05 BTK + EGFR + FGFR inventories in
+[`../covalent-ligand-survey-2026-06-05/`](../covalent-ligand-survey-2026-06-05/).
+
 ## Other refs worth pinning here later
 
 If we move into the AceDRG-fallback path for novel warheads outside the
