@@ -26,7 +26,7 @@ Coverage:
 
 - **Load / view**: `fetch`, `load`, `delete`, `enable`/`disable`, `zoom`, `orient`, `center`, `set_view`
 - **Representation**: `show` / `hide` / `as` for cartoon, sticks, lines, spheres, surface (find-or-create; no duplicate reps)
-- **Colour**: `color`, `bg_color`, `spectrum b` with ~50 named PyMOL colours plus `#RRGGBB` / `0xRRGGBB`
+- **Colour**: `color`, `bg_color`, `spectrum b` with ~50 named PyMOL colours plus `#RRGGBB` / `0xRRGGBB`. As of pk-v0.2.18, colour rules apply to bond/stick representations as well as cartoons (fixed via a Coot WASM CID-selector patch — see PROJECT-NOTES.md).
 - **Full selection algebra**: `chain X+Y`, `resi A-B+C-D`, `name CA+CB`, macros (`polymer.protein`, `solvent`, `hetatm`, `backbone`, `sidechain`, `metals`, `ions`, `lig`), topology ops (`byres`, `bychain`, `byobject`, `bound_to`, `extend N`, `bymolecule`), distance ops (`within N of`, `near_to`, `beyond`, `gap`, `contact`, postfix `around N` and `X within N of Y`), reducers (`first`, `last`), property comparisons (`b > 30`, `q < 0.5`), and named selections via `select`
 - **Measurements**: `distance` draws a real labelled dashed line in the viewport (plus snackbar toast and console log)
 - **Screenshots**: `png` (and `ray` falls back to `png` — no software ray-tracer in Moorhen)
@@ -91,18 +91,36 @@ Multiple fixes for how the app handles dropped or imported `.cif` ligand diction
 
 ### 11. MVS portable-viewer export (File → Export portable viewer)
 
-PyKeko-only menu item. Saves the current scene as a self-contained Mol* HTML viewer (~3–10 MB structures-only, ~10–30 MB with density) you can share, drop into a slide, or open in any browser without installing anything. When the scene has visible maps a confirm dialog pops first with a file-size estimate and an "Include density" checkbox. Maps get cropped to a 40 Å cube around the camera target — wider than the viewer's clip sphere so density can follow the camera.
+PyKeko-only menu item. Saves the current scene as a self-contained Mol* HTML viewer (~3–10 MB structures-only, ~10–30 MB with density) you can share, drop into a slide, or open in any browser without installing anything. When the scene has visible maps a confirm dialog pops first with a file-size estimate and an "Include density" checkbox. Maps get cropped to a 40 Å cube around the camera target — wider than the viewer's clip sphere so density can follow the camera. Bundled Mol* runtime is **5.9.0** as of pk-v0.2.13 (was 4.18 originally).
 
 Faithful to what's on screen:
 
 - **Real Moorhen reps**: each visible representation (CBs / CRs / MolecularSurface / VdwSpheres / glycoBlocks / ligands / …) maps to the corresponding MVS rep type, so the export looks like the live view rather than a generic cartoon fallback.
 - **Real chain colours**: pulled from Coot's `get_colour_rules`, not a hardcoded palette. `applyColourToNonCarbonAtoms=false` is honored — the rule's colour goes on carbons, heteroatoms keep CPK (N=blue, O=red, S=yellow, …).
 - **CID selectors**: chain (`/mdl/chain`), residue, and `r1-r2` ranges round-trip through to MVS as `auth_asym_id` / `auth_seq_id` / `beg_auth_seq_id`-`end_auth_seq_id`.
+- **Lines vs sticks** (pk-v0.2.17+): the in-app translator distinguishes `lines` from `sticks` only via `bondOptions.width` (lines=0.03, sticks=0.10); the exporter threads this through to MVS `ball_and_stick.size_factor = width / 0.10` so lines render visibly thinner than sticks in the exported HTML.
 - **Density**: 2Fo-Fc as one isosurface, Fo-Fc as two (positive green / negative red), absolute contour preserved so the export shows the exact contour the user was looking at; the Mol* slider exposes a Relative/Absolute toggle so the viewer can switch.
 - **Camera**: capture target / position / up from Moorhen's view matrix.
-- **Camera-follow density** (pk-v0.2.4+): the bundled viewer adds a 20 Å sphere clip to every volume isosurface that tracks the camera target — when you pan, density follows like in Coot. Throttled to 80 ms so single drags update once. Implemented via Mol*'s `clip` GPU uniform (no re-mesh, essentially free). Density disappears at the embedded cube boundary, same way Coot's runs out at the loaded map's edge.
+- **Camera-follow density** (pk-v0.2.4+): the bundled viewer adds a 20 Å sphere clip to every volume isosurface that tracks the camera target — when you pan, density follows like in Coot. Throttled to 80 ms so single drags update once. Implemented via Mol*'s `clip` GPU uniform (no re-mesh, essentially free). Density disappears at the embedded cube boundary, same way Coot's runs out at the loaded map's edge. The **initial** static clip is declarative as of pk-v0.2.16 (emitted as MVS `representation.clip({type: "sphere", …})`); camera-follow updates remain imperative because Mol* doesn't yet expose declarative camera-follow — see [molstar/molstar#1844](https://github.com/molstar/molstar/issues/1844) for the upstream discussion.
 
 The bundled Mol* viewer (`PyKeko/viewer-template`) is trimmed for the "show one scene" use case: left panel starts collapsed (icon column only), `Remote States` snapshot list removed, action picker filtered to just Open Files. A small chevron button at the top-right of the canvas toggles the right Structure Tools panel for more drawing area.
+
+### 12. Ligand from SMILES (Coot-style "Fit ligand here")
+
+PyKeko-only enhancements to `Ligand → New Ligand from SMILE…` (pk-v0.2.12+):
+
+- **"Place at" dropdown**: View centre / **Active molecule centre** (default, pk-v0.2.15+) / Nearest positive Fo-Fc peak. The default uses the active protein's atom centroid rather than the camera rotation centre, so a fresh fetch + paste-SMILES drops the ligand on the protein, not somewhere in empty space.
+- **"Auto-fit to active map" toggle** (jiggle + RSR, default off): once enabled, the newly-placed ligand is auto-fit to the active map immediately after creation.
+- **Merge cleanup** (pk-v0.2.15+): when you merge the standalone preview ligand into an existing molecule, the preview is now fully disposed (was previously hidden but not deleted, causing two stacked copies of the ligand at slightly different positions).
+- The view auto-recentres on the placement target after creation.
+
+Together this reproduces Coot 0.9.x's "Fit ligand here" workflow as a single dialog.
+
+### 13. Native session save/restore (`.pykeko`)
+
+PyKeko-only (pk-v0.2.8+, properly working since v0.2.9): `File → Save session…` opens a native macOS Save panel and writes a `.pykeko` file (protobuf-encoded full scene — molecules, maps, per-rep colour rules, camera, vectors, 2D overlays, view settings, plus a `PyKekoUiState` block carrying scripting-modal mode + welcome-hint flag). `File → Open session…` does the inverse with a native Open panel. `.pykeko` files dropped onto the canvas also load. Browser builds keep the old "Save Session File:" textbox + in-browser IndexedDB backups; in the desktop build these legacy items are hidden because a real filesystem is available.
+
+Known limitation: hidden representations are filtered out at save time (`fetchSession` does `.filter(item => item.visible)`). Restoring hidden reps requires the restore path to gracefully re-add them — deferred.
 
 ---
 

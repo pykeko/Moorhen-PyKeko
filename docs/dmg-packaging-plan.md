@@ -1,5 +1,13 @@
 # DMG packaging plan (Tahoe-only, personal & redistributable)
 
+> **Status: implemented (pk-v0.2, 2026-05-28).** The dist-variant build the plan
+> below describes has shipped on every release since v0.2. The realized dmg size
+> is **151 MB as of v0.2.18** (down from 226 MB in v0.2.17 after the
+> `forge.config.js` ignore-list slim-down — well under the 300 MB estimate
+> the plan worked with). For the live build pipeline, see the
+> [`PyKeko` wrapper's `CLAUDE.md`](https://github.com/pykeko/PyKeko/blob/main/CLAUDE.md);
+> this document is preserved as design context.
+
 This is a **plan**, not an implementation. The goal is to produce a self-contained
 `.dmg` for macOS 15 (Tahoe) — and ideally Apple Silicon + Intel — without
 disturbing the working PyKeko / PyKekoDev installs that the dev box

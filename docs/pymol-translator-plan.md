@@ -1,5 +1,12 @@
 # Plan: PyMOL command translator in Interactive Scripting
 
+> **Status: implemented across pk-v0.2 → pk-v0.2.18.** The translator shipped
+> with v0.2; the `color` reach + bond-rendering fixes landed in v0.2.11 and
+> v0.2.18 respectively. For the user-facing command reference, see
+> [`pymol-translator.md`](pymol-translator.md). This document is preserved
+> as design context (defaults that were baked in, the test-corpus rationale,
+> and the original tier-1/tier-2 scoping decisions).
+
 A subset of PyMOL command syntax interpreted line-by-line and dispatched to
 existing Moorhen APIs. Goal: paste-and-run for typical PyMOL setup /
 visualization scripts (~80% of real-world use); explicitly out of scope for

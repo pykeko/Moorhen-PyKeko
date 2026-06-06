@@ -357,11 +357,11 @@ For ongoing customizations:
 
 ### Functional
 
-1. **`w` (add water)** isn't single-water-at-cursor like Coot — Moorhen's `add_waters` is a batch operation that fills all positive density peaks.
+1. **64-bit WASM hangs in Electron wrapper** — wrapper forces 32-bit mode (via `MOORHEN_FORCE_32BIT` window flag + `?force32=1` worker URL query). Browser (Chrome) uses 64-bit fine.
 
-2. **64-bit WASM hangs in Electron wrapper** — wrapper forces 32-bit mode (via `MOORHEN_FORCE_32BIT` window flag + `?force32=1` worker URL query). Browser (Chrome) uses 64-bit fine.
+2. **Window-narrow CSS** — Moorhen's left menu collapses if window is too narrow; resize wider if you can't see it.
 
-3. **Window-narrow CSS** — Moorhen's left menu collapses if window is too narrow; resize wider if you can't see it.
+   *(The pre-v0.2 "`w` is batch, not single-water-at-cursor" known issue was resolved — `w` is now single-water-at-crosshairs + refine, see [Single water at crosshairs](#single-water-at-crosshairs--refine) below.)*
 
 ### Workflow
 
@@ -690,6 +690,32 @@ The `File → Save as PyMOL bundle (.pml)` menu item was hidden in pk-v0.2.3+. T
 ### Interactive Scripting history (pk-v0.2.5)
 
 [`MoorhenScriptModal.tsx`](baby-gru/src/components/modal/MoorhenScriptModal.tsx) now wraps shell-style `↑`/`↓` history navigation around the existing react-simple-code-editor input. Handler is attached via Editor's own `onKeyDown` prop (a wrapping-div + bubbling approach broke because `DraggableModalBase` does a two-phase measure/render that swaps the body div). Per-mode history (PyMOL and JavaScript keep separate pools) stored at `localStorage["moorhen.scripting.history.<mode>"]` capped at 200 entries with consecutive-duplicate dedup. Cursor-at-boundary gating preserves normal caret movement inside multi-line scripts: `↑` only enters history mode when there's no `\n` before the cursor; `↓` only when there's no `\n` after. A draft you were typing before diving into history is stashed (one slot, in `draftRef`) and restored when you `↓` back past `idx === -1`. Editing a recalled entry auto-snaps out of history mode via a `useEffect([code, history])` that compares against the expected history entry. Also wired `Cmd/Ctrl+Enter` as a submit shortcut so you can run without reaching for the Play button.
+
+### SMILES → ligand placement dialog (pk-v0.2.12 → pk-v0.2.15)
+
+`Ligand → New Ligand from SMILE…` gained a "Place at" dropdown and an "Auto-fit to active map" toggle, reproducing Coot 0.9.x's "Fit ligand here" workflow. The two follow-up patch releases captured the placement-coord traps Moorhen's helper functions set:
+
+- **v0.2.12** added the dropdown (View centre / Nearest +Fo-Fc peak) and the jiggle+RSR auto-fit toggle.
+- **v0.2.14** was a hotfix: `placement` was being set in world coords then negated again before passing to Coot, so the ligand landed at the mirror image across `(0,0,0)` — well outside any reasonable density region. Auto-fit's jiggle radius was smaller than the protein-to-mirror distance, so the toggle couldn't pull it back. Fix: pass world coords through with no negation.
+- **v0.2.15** added "Active molecule centre" as a third (and the default) placement option, because "View centre" = camera rotation centre, which on a fresh fetch isn't on the protein. The new default uses the active protein's atom centroid. **Trap caught while testing:** Moorhen's `centreOnGemmiAtoms()` returns the **negated** centroid — the function is meant for `setOrigin` and its return-value contract isn't documented. Worth remembering: anywhere we call it for a *placement* coordinate, the result has to be negated again. Also caught and fixed: standalone preview ligand was hidden but not deleted on merge-into-molecule, producing a "two ligands stacked" artifact at slightly different positions.
+
+The view auto-recentres on the placement target after creation.
+
+### Colour rules on bond representations (pk-v0.2.18)
+
+Until v0.2.18, PyMOL `color` commands (and any `addColourRule("cid", …)`) had no visible effect on bond/stick representations — only cartoons, surfaces, and a few other rep types responded. Diagnosing this end-to-end was a multi-day effort with three independent bugs stacked on each other; each one masked the next.
+
+**Layer 1 — Coot WASM CID-selector bug.** `set_user_defined_atom_colour_by_selection` uses mmdb's `Select(STYPE_ATOM, SKEY_NEW, cid)` to translate a CID string into the UDD atom set to colour. mmdb's `Select` mis-parses Moorhen-shorthand CIDs (`//A`, `/1/A/*/*`, …) — it consistently resolves them all to the same chain regardless of input. Patch: `coot-patches/coot-molecule-bonds-userdef-color-cid-fix.patch` bypasses mmdb's `Select` for whole-chain CIDs and walks the model manually (chain-id match + ATOM iterate), falling back to mmdb only for residue-level cases that the manual walk doesn't handle. ~30 lines replaced with a tagged `// ====== PyKeko patch (selector fix) ======` block in `api/coot-molecule-bonds.cc`. Applied via `coot-patches/apply.sh` (idempotent: greps for the tag before re-applying), so a clean `./get_sources` → `apply.sh` → `./moorhen_build.sh moorhen` rebuild reproduces the fixed `moorhen.wasm` (~19 MB) shipped in `~/Moorhen/baby-gru/public/MoorhenAssets/wasm/`.
+
+**Layer 2 — missing JS-side toggle.** Even with the WASM patch correct, the bond renderer ignores all user-defined colour calls unless `set_use_bespoke_carbon_atom_colour(molNo, true)` has been called for that molecule. Upstream Moorhen never calls it. Now invoked on every bond-mesh fetch in `getCootSelectionBondBuffers` ([`MoorhenMoleculeRepresentation.ts`](baby-gru/src/utils/MoorhenMoleculeRepresentation.ts) ~line 1344) before the buffer request. The toggle is a no-op when the UDD vector is empty, so this is safe to always call.
+
+**Layer 3 — first-match-wins UDD shadowing.** Coot's `apply_user_defined_atom_colour_selections` processes the indexed UDD vector first-match-wins for each atom. The chain-level rule added at molecule-load (so every chain gets its `cidToHex(chain)` default colour) lives at index 0; later user `color` commands for the same CID got appended to the end, but the first-match-wins scan saw the default rule first and stopped. So user rules were "applied" by the JS side but silently shadowed by the WASM side. Fix in [`MoorhenPymolTranslator.ts`](baby-gru/src/utils/MoorhenPymolTranslator.ts) `cmdColor` (~line 762): dedupe prior rules for the same `cid` (walking `molecule.defaultColourRules` in reverse) before appending the new one. Effectively replace-in-place semantics.
+
+End-to-end verification ran via Chrome DevTools Protocol (Electron `--remote-debugging-port=9222 --remote-allow-origins=*`) + PIL pixel sampling of canvas screenshots. The CDP probe path matters: clicking the canvas during a probe rotates the camera, which had me chasing left/right confusion early on — now we drive everything via `window.MoorhenControlApi` calls and skip canvas clicks during tests.
+
+### dmg slim-down (pk-v0.2.18)
+
+While verifying the colour fix, the first v0.2.18 dmg shipped at **489 MB**. Root cause: `forge.config.js` had no `packagerConfig.ignore` array, so electron-packager swept the entire working dir into `Resources/app/`. The biggest passengers were `viewer-template/node_modules` (~200 MB), `.attic/` (local backup dmgs, ~245 MB), `out/` (previous build output, recursive bundling), and stray test session/.pdb/.cif files. After adding ignore patterns the dmg dropped to **151 MB** — actually smaller than every release since v0.2.3 (was 226.63 MB at v0.2.17, so −33%). Anything we need at runtime is either wrapper code (`preload.js`, `main.js`, `package.json`, bundled by default) or explicit via `extraResource` (`static/`, `viewer-template/dist/`). See [`PyKeko/forge.config.js`](https://github.com/pykeko/PyKeko/blob/main/forge.config.js) for the current ignore list and the rationale comment.
 
 ## Future Work
 

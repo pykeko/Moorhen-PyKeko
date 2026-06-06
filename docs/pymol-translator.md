@@ -56,7 +56,7 @@ abemaciclib ligand shows as yellow sticks, and the view zooms onto it.
 
 | Command | Notes |
 |---------|-------|
-| `show <rep>[, sel]` | Find-or-create a representation. Mapping: `cartoon`/`ribbon` → CRs, `sticks`/`lines` → CBs, `spheres`/`sphere` → VdwSpheres, `surface`/`mesh`/`dots` → MolecularSurface, `nb_spheres` → VdwSpheres. |
+| `show <rep>[, sel]` | Find-or-create a representation. Mapping: `cartoon`/`ribbon` → CRs, `sticks` → CBs (standard bond width 0.10), `lines` → CBs (thinner bond width 0.03), `spheres`/`sphere` → VdwSpheres, `surface`/`mesh`/`dots` → MolecularSurface, `nb_spheres` → VdwSpheres. The `lines`/`sticks` distinction is preserved on MVS portable-viewer export as of v0.2.17 (exported `ball_and_stick.size_factor` derived from `bondOptions.width`). |
 | `hide <rep>[, sel]` | Hide that style (the buffers remain so the next `show` is fast). `hide everything` hides every representation on the molecule. |
 | `as <rep>[, sel]` | `hide everything` then `show <rep>`. |
 
@@ -64,7 +64,7 @@ abemaciclib ligand shows as yellow sticks, and the view zooms onto it.
 
 | Command | Notes |
 |---------|-------|
-| `color <colour>[, sel]` | Adds a coot colour rule with the selection cid → hex, then redraws once per affected molecule. ~50 PyMOL colour names recognised (red, salmon, slate, firebrick, forest, …) plus `#RRGGBB` / `0xRRGGBB` literals. |
+| `color <colour>[, sel]` | Adds a coot colour rule with the selection cid → hex, then redraws once per affected molecule. ~50 PyMOL colour names recognised (red, salmon, slate, firebrick, forest, …) plus `#RRGGBB` / `0xRRGGBB` literals. **As of v0.2.18, the colour rule is visible on bond and stick representations** (previously the rule reached only cartoon/surface reps because of a Coot WASM CID-selector bug + a missing `set_use_bespoke_carbon_atom_colour` toggle — see PROJECT-NOTES.md). |
 | `bg_color <colour>` | Dispatch `setBackgroundColor`. Note: persists as the user's default (Moorhen syncs `backgroundColor` → `defaultBackgroundColor` automatically). |
 | `colour` / `bg_colour` | British-spelling aliases. |
 | `spectrum b` / `spectrum b-factor` | Apply b-factor-normalised colour rule. Other modes (`count`, `rainbow`) currently warn — they were aliasing to symmetry-mate colouring which is wrong. |

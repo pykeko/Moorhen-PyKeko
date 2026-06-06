@@ -22,8 +22,9 @@ $99/year for a Developer ID certificate.
 - **macOS 15.x (Tahoe)** on Apple Silicon (M1 / M2 / M3 / M4).
   - Sequoia (macOS 14) might work but is not tested.
   - Intel Macs are not supported by this build — see [Other architectures](#other-architectures) below.
-- **About 500 MB free disk space** (the app is ~250 MB on disk after install,
-  plus another ~50 MB cache).
+- **About 350 MB free disk space** (the app is ~160 MB on disk after install
+  as of v0.2.18 — down from ~250 MB in v0.2.17 after the build slim-down —
+  plus another ~50 MB cache during use).
 - No other dependencies. The app self-contains Electron, the WASM build of
   CCP4/Coot, and all monomer libraries.
 
@@ -120,7 +121,10 @@ installs required:
 | **Internet, for "Fetch from PDB"** | Required at fetch time | — |
 | **Claude / MCP integration** | Separate install (see below) | — |
 
-Final installed size: ~408 MB. The DMG itself is ~178 MB compressed.
+Final installed size: ~160 MB on disk (v0.2.18). The DMG itself is **151 MB**
+compressed — down from 226 MB in v0.2.17 after the v0.2.18 build slim-down
+(stopped bundling `viewer-template/node_modules` and other non-runtime paths
+into the .app).
 
 The app is fully offline-capable for any structure file you have locally —
 PDB, mmCIF, MTZ, CCP4 maps, ligand .cif dictionaries, etc. It only reaches the
