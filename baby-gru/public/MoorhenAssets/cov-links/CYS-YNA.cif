@@ -1,0 +1,168 @@
+# CYS-YNA — Cys-S to α,β-ynamide post-Michael adduct
+#
+# Hand-authored link CIF for PyKeko covalent-ligand workflow (task #148).
+# Family F2 of the plan-doc taxonomy: covers methyl butynamide (acalabrutinib,
+# tirabrutinib, branebrutinib), extended-methyl variants (canertinib, neratinib,
+# dacomitinib, mobocertinib, "third-gen EGFR" extended methyl), aryl-extended
+# propynamides, and (with the §A.3 angle tweak) terminal propiolamide.
+#
+# The link constrains atoms ONLY up to Cβ. Anything past Cβ (methyl, ethyl,
+# benzyl, R-CH₂-, aryl) is governed by the ligand's own monomer dictionary —
+# this single template handles the whole ynamide family.
+#
+# PLACEHOLDER TOKENS substituted at runtime by the PyKeko Track B detector:
+#   <LIG> ← ligand 3-letter (or 5-char) CCD code (e.g. XQQ for acalabrutinib)
+#   <CB>  ← Cβ atom-id in the user's ligand   (e.g. C19 in XQQ)
+#   <CA>  ← Cα atom-id                         (e.g. C13)
+#   <CO>  ← carbonyl-C atom-id                 (e.g. C7)
+#   <N>   ← amide-N atom-id                    (e.g. N1)
+#   <O>   ← carbonyl-O atom-id                 (e.g. O1)
+#   <HCB> ← H to delete on Cβ (post-product input) (e.g. H18)
+#
+# References:
+#   ~/Moorhen/docs/refs/nicholls-modelling-2021.pdf — CCP4-ML link-CIF format
+#   ~/Moorhen/docs/refs/nicholls-missing-link-2021.pdf — empirical drift
+#   ~/Moorhen/docs/covalent-ligand-plan.md Appendix A.1, A.2, A.4, A.5
+#   ~/Moorhen/docs/covalent-ligand-survey-2026-06-05/btk-8fd9-8ff0-geom/
+#     — measured 8FD9 τ = −89° (anti drift), 8FF0 τ = +2° (clean syn)
+#     — both planarity RMS ~0.48 Å vs target <0.05 → period=2 dihedral
+#       so syn and anti both satisfy; conjugated-plane restraint forces
+#       coplanarity regardless of which face the addition went on
+
+data_link_CYS-YNA
+_chem_link.id                CYS-YNA
+_chem_link.name              "Cys-S to alpha,beta-ynamide post-Michael adduct"
+_chem_link.comp_id_1         CYS
+_chem_link.mod_id_1          CYS-YNA-mod1
+_chem_link.group_comp_1      L-peptide
+_chem_link.comp_id_2         <LIG>
+_chem_link.mod_id_2          CYS-YNA-mod2
+_chem_link.group_comp_2      non-polymer
+
+# ---- bonds: new S-Cβ + the C=C across the vinyl thioether ----
+loop_
+_chem_link_bond.atom_1_comp_id
+_chem_link_bond.atom_id_1
+_chem_link_bond.atom_2_comp_id
+_chem_link_bond.atom_id_2
+_chem_link_bond.type
+_chem_link_bond.value_dist
+_chem_link_bond.value_dist_esd
+ 1 SG    2 <CB>   single 1.80 0.02
+ 2 <CB>  2 <CA>   double 1.34 0.02
+
+# ---- angles around the new sp2 carbon ----
+loop_
+_chem_link_angle.atom_1_comp_id
+_chem_link_angle.atom_id_1
+_chem_link_angle.atom_2_comp_id
+_chem_link_angle.atom_id_2
+_chem_link_angle.atom_3_comp_id
+_chem_link_angle.atom_id_3
+_chem_link_angle.value_angle
+_chem_link_angle.value_angle_esd
+ 1 CB    1 SG    2 <CB>   102.0   3.0
+ 1 SG    2 <CB>  2 <CA>   122.0   3.0
+ 2 <CB>  2 <CA>  2 <CO>   122.0   3.0
+
+# ---- dihedral across the new C=C ----
+# RATIONALE: empirically (n=36 F2 PDB entries) τ(SG-Cβ=Cα-C7carbonyl)
+# is bimodal — tirabrutinib structures (5P9M, 8FF0) cluster at ~+2° (syn
+# addition product, the textbook thia-Michael answer), but acalabrutinib
+# 8FD9 sits at -89° (pocket-distorted, missing-link drift). period=2 lets
+# both 0° and ±180° satisfy the restraint with σ=20° — the planarity
+# restraint below provides the binding constraint that the sp2 π system
+# stays coplanar regardless of which face S landed on. If your refinement
+# starts from a clean syn deposit and you want to lock it there, switch
+# to period=1 σ=15° at runtime.
+loop_
+_chem_link_tor.id
+_chem_link_tor.atom_1_comp_id
+_chem_link_tor.atom_id_1
+_chem_link_tor.atom_2_comp_id
+_chem_link_tor.atom_id_2
+_chem_link_tor.atom_3_comp_id
+_chem_link_tor.atom_id_3
+_chem_link_tor.atom_4_comp_id
+_chem_link_tor.atom_id_4
+_chem_link_tor.value_angle
+_chem_link_tor.value_angle_esd
+_chem_link_tor.period
+ vinyl_planar 1 SG 2 <CB> 2 <CA> 2 <CO> 0.0 20.0 2
+
+# ---- planarity restraint over the conjugated vinyl-thioether-amide ----
+# The π system {SG, Cβ, Cα, C7(=O), N, O} should be coplanar. RMS dev
+# target 0.02 Å. This is the load-bearing restraint — if τ is bimodal
+# the plane still enforces sp2 geometry. See plan-doc §A.4 for why the
+# original component's amide plane must be DELETED in mod2 to avoid
+# overlapping plane restraints.
+loop_
+_chem_link_plane.id
+_chem_link_plane.atom_comp_id
+_chem_link_plane.atom_id
+_chem_link_plane.dist_esd
+ PLN_THIOVINYL 1 SG    0.02
+ PLN_THIOVINYL 2 <CB>  0.02
+ PLN_THIOVINYL 2 <CA>  0.02
+ PLN_THIOVINYL 2 <CO>  0.02
+ PLN_THIOVINYL 2 <N>   0.02
+ PLN_THIOVINYL 2 <O>   0.02
+
+
+# =====================================================================
+# Cys-side modification: delete HG (the thiol H)
+# =====================================================================
+data_mod_CYS-YNA-mod1
+loop_
+_chem_mod_atom.mod_id
+_chem_mod_atom.function
+_chem_mod_atom.atom_id
+_chem_mod_atom.new_atom_id
+_chem_mod_atom.new_type_symbol
+_chem_mod_atom.new_type_energy
+_chem_mod_atom.new_partial_charge
+ CYS-YNA-mod1 delete HG . . . .
+
+
+# =====================================================================
+# Ligand-side modification — POST-PRODUCT CROTONAMIDE INPUT BRANCH.
+#
+# Assumes the ligand chem_comp was deposited with the C=C already drawn
+# (XQQ-style — see PDB entry 8FD9). Just delete the spare H on Cβ that's
+# being replaced by the new SG bond, and remove the original amide-plane
+# restraint to make way for the larger conjugated thiovinyl plane.
+#
+# If the runtime detector instead matched the alkyne-pre form (free drug
+# SMILES, R-C≡C-C(=O)-N), use the §A.2-style variant block which:
+#   (1) changes Cα≡Cβ from triple to double bond,
+#   (2) adds a new H on Cα,
+#   (3) retypes Cα and Cβ from sp to sp2.
+# See CYS-YNA-mod2-alkyne.cif (sibling template) for that variant.
+# =====================================================================
+data_mod_CYS-YNA-mod2
+loop_
+_chem_mod_atom.mod_id
+_chem_mod_atom.function
+_chem_mod_atom.atom_id
+_chem_mod_atom.new_atom_id
+_chem_mod_atom.new_type_symbol
+_chem_mod_atom.new_type_energy
+_chem_mod_atom.new_partial_charge
+ CYS-YNA-mod2 delete <HCB> . . . .
+
+# Delete the original amide plane restraint over {Cβ, Cα, C7, N, O}
+# — replaced by the larger PLN_THIOVINYL above. Required to prevent
+# overlapping plane restraints (see plan-doc §A.4 and Nicholls 2021
+# methods Figs 4f/4g, 5e/5f for the canonical NAG-ASN / LYS-PLP examples).
+# The exact plane id depends on the ligand's monomer dictionary —
+# substituted at runtime by the detector after introspecting the chem_comp.
+loop_
+_chem_mod_plane_atom.mod_id
+_chem_mod_plane_atom.function
+_chem_mod_plane_atom.plane_id
+_chem_mod_plane_atom.atom_id
+ CYS-YNA-mod2 delete <AMIDE_PLANE> <CB>
+ CYS-YNA-mod2 delete <AMIDE_PLANE> <CA>
+ CYS-YNA-mod2 delete <AMIDE_PLANE> <CO>
+ CYS-YNA-mod2 delete <AMIDE_PLANE> <N>
+ CYS-YNA-mod2 delete <AMIDE_PLANE> <O>

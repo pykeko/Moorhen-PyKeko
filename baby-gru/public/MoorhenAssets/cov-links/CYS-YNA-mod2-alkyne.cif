@@ -1,0 +1,58 @@
+# CYS-YNA-mod2-alkyne — alternative mod2 for the alkyne pre-Michael input case
+#
+# When the user uploaded a ligand with the C≡C still drawn (the free drug
+# SMILES form, e.g. CC#CC(=O)N1CCC[C@@H]1... from PubChem), this mod2 block
+# REPLACES the default `data_mod_CYS-YNA-mod2` in CYS-YNA.cif. It encodes
+# the Michael-addition chemistry that the bond declaration triggers:
+#
+#   (1) Change Cα≡Cβ from triple to double bond
+#   (2) Add H on Cα (Michael addition transfers one H to the α carbon)
+#   (3) Retype Cα and Cβ from sp to sp2
+#   (4) The new SG–Cβ bond is added via the link's bond block (not here)
+#
+# Selected at runtime when the SMARTS detector matched either:
+#   CYS-YNA-pre          (internal alkyne, R-C≡C-C(=O)-N)
+#   CYS-YNA-pre-terminal (HC≡C-C(=O)-N, Spebrutinib-class)
+#
+# For the terminal-propiolamide case (R = H, no Cγ on the warhead), the
+# JS detector additionally appends one extra _chem_link_angle row to the
+# link block:
+#   1 SG 2 <CB> 2 <HCB-new> 118.0 3.0
+# (the H ends up where the methyl would have been; see plan-doc §A.3.)
+#
+# PLACEHOLDER TOKENS substituted at runtime (same set as CYS-YNA.cif):
+#   <CB>  ← Cβ atom-id   (e.g. C19 in XQQ)
+#   <CA>  ← Cα atom-id   (e.g. C13)
+#   <HCA> ← H to add on Cα (named to match ligand's existing H-naming
+#            convention, e.g. H13 if the ligand uses C-numbered H atoms)
+#
+# References:
+#   ~/Moorhen/docs/covalent-ligand-plan.md Appendix A.2
+#   ~/Moorhen/docs/refs/nicholls-modelling-2021.pdf §3.1 (chem_mod semantics)
+
+data_mod_CYS-YNA-mod2
+
+# (1) Change Cα≡Cβ from triple → double
+loop_
+_chem_mod_bond.mod_id
+_chem_mod_bond.function
+_chem_mod_bond.atom_id_1
+_chem_mod_bond.atom_id_2
+_chem_mod_bond.new_type
+_chem_mod_bond.new_value_dist
+_chem_mod_bond.new_value_dist_esd
+ CYS-YNA-mod2 change <CB> <CA> double 1.34 0.02
+
+# (2) Add a new H on Cα (named to follow the ligand's H-naming convention)
+# (3) Retype Cα and Cβ from sp to sp2 (energy-type CR1 = sp2 vinyl carbon)
+loop_
+_chem_mod_atom.mod_id
+_chem_mod_atom.function
+_chem_mod_atom.atom_id
+_chem_mod_atom.new_atom_id
+_chem_mod_atom.new_type_symbol
+_chem_mod_atom.new_type_energy
+_chem_mod_atom.new_partial_charge
+ CYS-YNA-mod2 add    <HCA> <HCA> H HCH1 .
+ CYS-YNA-mod2 change <CA>  .     C CR1  .
+ CYS-YNA-mod2 change <CB>  .     C CR1  .

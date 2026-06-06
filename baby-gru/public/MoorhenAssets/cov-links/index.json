@@ -1,0 +1,49 @@
+{
+  "$comment": [
+    "Registry of pre-baked Cys-warhead link CIF templates.",
+    "Each entry maps a SMARTS pattern to a link CIF + mod2 variant.",
+    "The runtime detector matches SMARTS in declared order and uses the first hit.",
+    "See README.md for the full architecture and placeholder-token semantics.",
+    "Plan-doc: ~/Moorhen/docs/covalent-ligand-plan.md §2.1-2.5"
+  ],
+
+  "version": 1,
+
+  "warheads": [
+    {
+      "id": "CYS-YNA-post",
+      "family": "F2",
+      "name": "Cys-S to alpha,beta-ynamide post-product (vinyl thioether)",
+      "drugs": ["acalabrutinib", "tirabrutinib", "branebrutinib", "afatinib", "neratinib", "dacomitinib", "mobocertinib"],
+      "smarts": "[#16][C:1]=[C:2]C(=O)N",
+      "mapping": { "cb": 1, "ca": 2 },
+      "link_cif": "CYS-YNA.cif",
+      "mod2_variant": "post",
+      "$comment": "Matches the post-reaction form: vinyl-thioether C=C drawn between S and the carbonyl. Used when the ligand was uploaded as the bound state (XQQ-style chem_comp in 8FD9)."
+    },
+    {
+      "id": "CYS-YNA-pre",
+      "family": "F2",
+      "name": "Cys-S to alpha,beta-ynamide (alkyne pre-reaction form)",
+      "drugs": ["acalabrutinib (free drug)", "tirabrutinib (free drug)"],
+      "smarts": "[C:1]#[C:2]C(=O)N",
+      "mapping": { "cb": 1, "ca": 2 },
+      "link_cif": "CYS-YNA.cif",
+      "mod2_variant": "alkyne",
+      "mod2_cif": "CYS-YNA-mod2-alkyne.cif",
+      "$comment": "Matches the free-drug alkyne form: R-C#C-C(=O)-N. The mod2 transforms triple->double, adds H on Calpha, retypes sp->sp2. Triggered when the user pastes the PubChem SMILES."
+    },
+    {
+      "id": "CYS-YNA-pre-terminal",
+      "family": "F2",
+      "name": "Cys-S to terminal propiolamide (HC#C-C(=O)-N, Spebrutinib-class)",
+      "drugs": ["spebrutinib"],
+      "smarts": "[CH:1]#[C:2]C(=O)N",
+      "mapping": { "cb": 1, "ca": 2 },
+      "link_cif": "CYS-YNA.cif",
+      "mod2_variant": "alkyne_terminal",
+      "mod2_cif": "CYS-YNA-mod2-alkyne.cif",
+      "$comment": "Terminal-alkyne sub-variant. Same mod2 as 'pre' but the resulting Cb has H instead of an R group. Plan-doc §A.3 adds one extra angle restraint at runtime for SG-Cb-H."
+    }
+  ]
+}
