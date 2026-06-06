@@ -19,14 +19,21 @@ Skim [`PROJECT-NOTES.md`](PROJECT-NOTES.md) for the implementation writeups, but
 
 | Branch | Use |
 | --- | --- |
-| `main` | Default; basis for releases and the dist build |
-| `ncs-ghosts` | Active working branch with the user's customizations on top of main |
+| `main` | Single trunk — development, releases, and what PyKeko packages from |
 
 Local clones:
-- `~/Moorhen` (currently on `ncs-ghosts`) — what `PyKeko.app` dist builds from (`forge.config.js` hard-codes `BABY_GRU = ~/Moorhen/baby-gru`)
-- `~/Moorhen-dev` (currently on `main`) — what `PyKekoDev.app` runs against via vite, port 5174
+- `~/Moorhen` (on `main`) — what `PyKeko.app` dist builds from (`forge.config.js` hard-codes `BABY_GRU = ~/Moorhen/baby-gru`)
+- `~/Moorhen-dev` (on `main`) — what `PyKekoDev.app` runs against via vite, port 5174
 
-`upstream` remote points at `moorhen-coot/Moorhen` for pulling in upstream changes.
+`upstream` remote points at `moorhen-coot/Moorhen` for pulling in upstream changes. Use real short-lived feature branches when you need isolation — merge back to `main` and delete when done.
+
+**History note:** until 2026-06-06 there was a `ncs-ghosts` parallel
+working branch that PyKeko packaged from. Every commit had to be cherry-
+picked from `ncs-ghosts` to `main`, creating SHA drift and ceremony for no
+functional benefit. The branch was retired and the workflow simplified to a
+single trunk. The original `feedback_branch_sync_trap` memory described
+the parallel-branch trap; it's been deleted because the trap no longer
+applies.
 
 ## Build
 
@@ -61,17 +68,18 @@ Note on the v0.2.7 → v0.2.9 gap: v0.2.7 shipped with a preload regression that
 
 Note on **v0.2.18**: the dmg dropped from 226 MB to **151 MB** (−33%) after `forge.config.js` gained a `packagerConfig.ignore` array (was bundling `viewer-template/node_modules`, `.attic/`, `out/` into `Resources/app/`). v0.2.18 also patched a Coot WASM bug — `set_user_defined_atom_colour_by_selection` mis-parsed Moorhen-shorthand CIDs via mmdb's `Select`, so colour rules never reached bond/stick reps. Fix lives in `coot-patches/coot-molecule-bonds-userdef-color-cid-fix.patch` (applied via `coot-patches/apply.sh` against the WASM checkout). **v0.2.19 was closed without code** — upstream's `Validation → Water validation…` already implements Coot's `find_water_baddies` UI.
 
-## Branch-sync workflow
+## Workflow
 
-The user's working branch is `ncs-ghosts`. To propagate a doc/source change to `main` for inclusion in the next release:
+Single-trunk: commit to `main`, push, done.
 
 ```bash
-git -C ~/Moorhen checkout main && git pull --ff-only
-git -C ~/Moorhen cherry-pick <sha>
-git -C ~/Moorhen push
-git -C ~/Moorhen checkout ncs-ghosts
-git -C ~/Moorhen-dev pull --ff-only
+git -C ~/Moorhen add ...
+git -C ~/Moorhen commit -m "..."
+git -C ~/Moorhen push origin main
+git -C ~/Moorhen-dev pull --ff-only   # keep the dev clone in sync if it's checked out
 ```
+
+For longer-running feature work that you don't want on `main` yet, use a real short-lived feature branch and merge back when done. Don't recreate the `ncs-ghosts` parallel-trunk pattern.
 
 ## Where to look
 

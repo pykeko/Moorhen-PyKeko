@@ -102,8 +102,11 @@ git merge upstream/main      # resolve conflicts, then push
 
 | Branch | Use |
 |---|---|
-| `main` | default; basis for releases |
-| `ncs-ghosts` | active working branch (the dist `.app` builds from this) |
+| `main` | default trunk; basis for releases and what `PyKeko.app` builds from |
+
+(Until 2026-06-06 there was a parallel `ncs-ghosts` working branch that
+PyKeko packaged from. That branch was retired — `main` is now the single
+development and release trunk.)
 
 Releases are tagged **`pk-vX.Y`** and ship `PyKeko.dmg` — see [Releases](https://github.com/pykeko/Moorhen-PyKeko/releases). End-user install/upgrade: [docs/install-mac.md](docs/install-mac.md).
 
