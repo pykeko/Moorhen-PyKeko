@@ -169,6 +169,23 @@ EMSCRIPTEN_BINDINGS(moorhen_container) {
     .function("get_atom",&molecules_container_t::get_atom, allow_raw_pointers())
     .function("flipPeptide_cid",   select_overload<int(int, const std::string&,      const std::string&)>(&molecules_container_t::flip_peptide_using_cid))
     .function("flipPeptide",       select_overload<int(int, const coot::atom_spec_t&,const std::string&)>(&molecules_container_t::flip_peptide))
+    // PyKeko covalent-ligand workflow (task #148): make_covalent_link + delete_covalent_link
+    // exposed via both atom_spec_t and CID-string overloads. See
+    // ~/Moorhen-dev/coot-patches/molecules-container-make-covalent-link.cc for the
+    // implementation. Refinement automatically picks up the link once the chem_link
+    // dictionary is loaded via read_dictionary_string + make_covalent_link is called.
+    .function("make_covalent_link",
+              select_overload<int(int, const coot::atom_spec_t&, const coot::atom_spec_t&, const std::string&)>
+                              (&molecules_container_t::make_covalent_link))
+    .function("make_covalent_link_using_cids",
+              select_overload<int(int, const std::string&, const std::string&, const std::string&)>
+                              (&molecules_container_t::make_covalent_link_using_cids))
+    .function("delete_covalent_link",
+              select_overload<int(int, const coot::atom_spec_t&, const coot::atom_spec_t&)>
+                              (&molecules_container_t::delete_covalent_link))
+    .function("delete_covalent_link_using_cids",
+              select_overload<int(int, const std::string&, const std::string&)>
+                              (&molecules_container_t::delete_covalent_link_using_cids))
     .function("side_chain_180",    select_overload<int(int, const std::string&)>                         (&molecules_container_t::side_chain_180))
     .function("eigen_flip_ligand", select_overload<void(int, const std::string&)>                        (&molecules_container_t::eigen_flip_ligand_using_cid))
     .function("jed_flip",          select_overload<std::string(int, const std::string&, bool)>           (&molecules_container_t::jed_flip))

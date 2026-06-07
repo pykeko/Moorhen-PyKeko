@@ -223,6 +223,7 @@ ${coot_src}/skeleton/dm-utils.cc
 ${coot_src}/skeleton/BuildCas.cc
 ${coot_src}/skeleton/graphical_skel.cc
 ${coot_src}/ideal/pepflip.cc
+${coot_src}/ideal/add-linked-cho.cc
 ${coot_src}/ideal/parallel-planes.cc
 ${coot_src}/ideal/simple-restraint.cc
 ${coot_src}/ideal/ng.cc

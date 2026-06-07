@@ -56,9 +56,12 @@ coot::molecule_t::make_covalent_link(const coot::atom_spec_t &spec_1,
    if (! atom_sel.mol) return 0;
    if (! coot::util::get_atom(spec_1, atom_sel.mol)) return 0;
    if (! coot::util::get_atom(spec_2, atom_sel.mol)) return 0;
+   // Note: make_backup() handles dirty-state tracking via the API-side
+   // modification_info member (see have_unsaved_changes() at coot-molecule.hh:664).
+   // The desktop molecule_class_info_t's have_unsaved_changes_flag does NOT
+   // exist on coot::molecule_t — calling make_backup is sufficient.
    make_backup("make_covalent_link");
    coot::cho::make_link(atom_sel.mol, spec_1, spec_2, link_name, length, geom);
-   have_unsaved_changes_flag = 1;
    return 1;
 }
 
@@ -103,7 +106,6 @@ coot::molecule_t::delete_covalent_link(const coot::atom_spec_t &spec_1,
       if (match(link_p, at_1, at_2) || match(link_p, at_2, at_1)) {
          make_backup("delete_covalent_link");
          delete_link(link_p, model_p);
-         have_unsaved_changes_flag = 1;
          atom_sel.mol->FinishStructEdit();
          return 1;
       }

@@ -77,6 +77,26 @@ if [ -f "$WASM_CMAKE" ] && ! grep -q "molecules-container-make-covalent-link.cc"
     echo "  added molecules-container-make-covalent-link.cc to wasm_src/CMakeLists.txt"
 fi
 
+# add-linked-cho.cc provides coot::cho::make_link which our new wrapper calls.
+# The upstream wasm_src/CMakeLists.txt doesn't include it (the add-linked-cho
+# functionality is only used from the legacy desktop glycan workflow, which
+# isn't compiled into the WASM). Add it so the linker can resolve our call.
+if [ -f "$WASM_CMAKE" ] && ! grep -q "ideal/add-linked-cho.cc" "$WASM_CMAKE"; then
+    perl -i -pe 's{(\$\{coot_src\}/ideal/pepflip\.cc)}{$1\n\$\{coot_src\}/ideal/add-linked-cho.cc}' "$WASM_CMAKE"
+    grep -q "ideal/add-linked-cho.cc" "$WASM_CMAKE" || { echo "ERROR: failed to add add-linked-cho.cc to wasm_src/CMakeLists.txt"; exit 1; }
+    echo "  added ideal/add-linked-cho.cc to wasm_src/CMakeLists.txt"
+fi
+
+# moorhen-wrappers.cc embind bindings (the actual JS-facing API surface).
+# This file is part of the Moorhen repo proper (not the coot-1.0 checkout),
+# so we don't need a patch — the edits live committed in wasm_src/moorhen-wrappers.cc
+# directly. apply.sh just sanity-checks that the binding registrations are present.
+if ! grep -q "make_covalent_link" "$MOORHEN_DEV_DIR/wasm_src/moorhen-wrappers.cc"; then
+    echo "ERROR: wasm_src/moorhen-wrappers.cc is missing make_covalent_link embind registrations."
+    echo "       Check the file is in sync with the canonical version in ~/Moorhen/wasm_src/."
+    exit 1
+fi
+
 # Commit so the build script's version check passes. We commit ON the checked-out
 # main branch, which advances main to this commit directly — no `git branch -f`
 # needed (and it would fail anyway: git refuses to force-update a branch that's
