@@ -62,8 +62,6 @@ export interface CovalentLinkRequest {
     bonds: LigandBond[];
     /** Index of Cβ in the atoms array. */
     cbIdx: number;
-    /** Optional plane-id of the ligand's amide plane (mod2 deletion target). */
-    amidePlane?: string;
     /** If true, skip the WASM calls; just report what would have happened. */
     dryRun?: boolean;
 }
@@ -106,8 +104,7 @@ export async function declareCovalentLink(
         request.lig,
         request.atoms,
         request.bonds,
-        request.cbIdx,
-        request.amidePlane
+        request.cbIdx
     );
     if (!detected) {
         return {

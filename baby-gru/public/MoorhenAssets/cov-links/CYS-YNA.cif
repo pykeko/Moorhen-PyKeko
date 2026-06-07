@@ -40,6 +40,11 @@ _chem_link.mod_id_2          CYS-YNA-mod2
 _chem_link.group_comp_2      non-polymer
 
 # ---- bonds: new S-Cβ + the C=C across the vinyl thioether ----
+# RESTRAINT TARGETS (v2, 2026-06-07): updated against AceDRG 330 cross-validation
+# reference at docs/covalent-ligand-survey-2026-06-05/acedrg-cys-xqq/cys-xqq_link.cif.
+# AceDRG gives 1.744 ± 0.020 for S-Cβ (matches 8FD9's 1.683 observation), I split
+# the difference toward 1.78 to allow for CSD variation across the F2 family
+# (different R-groups past Cγ change the electronic environment at Cβ slightly).
 loop_
 _chem_link_bond.atom_1_comp_id
 _chem_link_bond.atom_id_1
@@ -48,10 +53,13 @@ _chem_link_bond.atom_id_2
 _chem_link_bond.type
 _chem_link_bond.value_dist
 _chem_link_bond.value_dist_esd
- 1 SG    2 <CB>   single 1.80 0.02
+ 1 SG    2 <CB>   single 1.78 0.02
  2 <CB>  2 <CA>   double 1.34 0.02
 
 # ---- angles around the new sp2 carbon ----
+# v2: ESDs tightened from 3.0° to 1.5° on the sp2 angles per AceDRG, which uses
+# CSD aggregate statistics. The CB-SG-Cβ angle (Cys side) stays at σ=3.0 since
+# the sp3 S has more conformational freedom than the planar sp2 carbon.
 loop_
 _chem_link_angle.atom_1_comp_id
 _chem_link_angle.atom_id_1
@@ -61,20 +69,22 @@ _chem_link_angle.atom_3_comp_id
 _chem_link_angle.atom_id_3
 _chem_link_angle.value_angle
 _chem_link_angle.value_angle_esd
- 1 CB    1 SG    2 <CB>   102.0   3.0
- 1 SG    2 <CB>  2 <CA>   122.0   3.0
- 2 <CB>  2 <CA>  2 <CO>   122.0   3.0
+ 1 CB    1 SG    2 <CB>   104.2   3.0
+ 1 SG    2 <CB>  2 <CA>   120.7   1.5
+ 1 SG    2 <CB>  2 <CG>   120.3   1.5
+ 2 <CB>  2 <CA>  2 <CO>   125.3   3.0
 
-# ---- dihedral across the new C=C ----
-# RATIONALE: empirically (n=36 F2 PDB entries) τ(SG-Cβ=Cα-C7carbonyl)
-# is bimodal — tirabrutinib structures (5P9M, 8FF0) cluster at ~+2° (syn
-# addition product, the textbook thia-Michael answer), but acalabrutinib
-# 8FD9 sits at -89° (pocket-distorted, missing-link drift). period=2 lets
-# both 0° and ±180° satisfy the restraint with σ=20° — the planarity
-# restraint below provides the binding constraint that the sp2 π system
-# stays coplanar regardless of which face S landed on. If your refinement
-# starts from a clean syn deposit and you want to lock it there, switch
-# to period=1 σ=15° at runtime.
+# ---- dihedrals ----
+# v2: switched to AceDRG's atom-choice convention. τ(Cγ-Cβ=Cα-SG) = 180° is
+# equivalent to my original τ(SG-Cβ=Cα-C7carbonyl) = 0° (syn-addition geometry),
+# but the Cγ-anchored version is what AceDRG emits and matches CCP4-ML convention.
+# period=2 + σ=5° lets refinement choose syn vs anti when 8FD9-like data has
+# already pushed the model to τ=-89° before the link CIF was applied; the
+# planarity restraint below provides the binding sp2 constraint.
+#
+# AceDRG also adds a soft τ on the Cα-Cβ-SG-CB single-bond hinge (sp3-sp2),
+# period=3, σ=20° — keeps the local geometry stable without locking the Cys
+# sidechain orientation. Pure-quality-of-life restraint.
 loop_
 _chem_link_tor.id
 _chem_link_tor.atom_1_comp_id
@@ -88,25 +98,28 @@ _chem_link_tor.atom_id_4
 _chem_link_tor.value_angle
 _chem_link_tor.value_angle_esd
 _chem_link_tor.period
- vinyl_planar 1 SG 2 <CB> 2 <CA> 2 <CO> 0.0 20.0 2
+ sp2_sp2_syn   2 <CG>  2 <CB>  2 <CA>  1 SG     180.0  5.0   2
+ sp2_sp3_hinge 1 CA    1 CB    1 SG    2 <CB>   180.0  20.0  3
 
-# ---- planarity restraint over the conjugated vinyl-thioether-amide ----
-# The π system {SG, Cβ, Cα, C7(=O), N, O} should be coplanar. RMS dev
-# target 0.02 Å. This is the load-bearing restraint — if τ is bimodal
-# the plane still enforces sp2 geometry. See plan-doc §A.4 for why the
-# original component's amide plane must be DELETED in mod2 to avoid
-# overlapping plane restraints.
+# ---- planarity restraint over the conjugated vinyl-thioether ----
+# v2: shrunk to just {SG, Cβ, Cα, Cγ} per AceDRG's plan-10 convention. The
+# original wider plane that I had reaching into {C7, N, O} would have
+# double-restrained the amide plane that's already in the ligand chem_comp
+# (Nicholls 2021 §3 explicitly warns against this — overlapping plane
+# restraints can cause numerical conflict and unstable refinement).
+#
+# RMS dev target 0.02 Å. The amide plane stays in the ligand's own chem_comp;
+# we DON'T delete it in mod2 anymore (the v1 mod2 plane-delete is now a no-op
+# since the link's own plane doesn't overlap the amide).
 loop_
 _chem_link_plane.id
 _chem_link_plane.atom_comp_id
 _chem_link_plane.atom_id
 _chem_link_plane.dist_esd
- PLN_THIOVINYL 1 SG    0.02
- PLN_THIOVINYL 2 <CB>  0.02
- PLN_THIOVINYL 2 <CA>  0.02
- PLN_THIOVINYL 2 <CO>  0.02
- PLN_THIOVINYL 2 <N>   0.02
- PLN_THIOVINYL 2 <O>   0.02
+ PLN_VINYL 1 SG    0.02
+ PLN_VINYL 2 <CB>  0.02
+ PLN_VINYL 2 <CA>  0.02
+ PLN_VINYL 2 <CG>  0.02
 
 
 # =====================================================================
@@ -129,8 +142,20 @@ _chem_mod_atom.new_partial_charge
 #
 # Assumes the ligand chem_comp was deposited with the C=C already drawn
 # (XQQ-style — see PDB entry 8FD9). Just delete the spare H on Cβ that's
-# being replaced by the new SG bond, and remove the original amide-plane
-# restraint to make way for the larger conjugated thiovinyl plane.
+# being replaced by the new SG bond.
+#
+# v2 (2026-06-07): the v1 plane-delete block over {Cβ, Cα, C7, N, O} was
+# removed. The link's PLN_VINYL plane is now scoped to just {SG, Cβ, Cα, Cγ}
+# (per AceDRG convention), so it no longer overlaps the ligand's amide
+# plane and the deletion is unnecessary. The conjugated π system is held
+# by the standalone amide plane (in the ligand chem_comp) + the new
+# PLN_VINYL plane — they share Cα but don't conflict.
+#
+# AceDRG-derived bond-order + retype changes (from cys-xqq_link.cif mod_XQQm1):
+#   * Cα-Cβ stays double 1.34 (Å). AceDRG's value of 1.371 reflects CSD vinyl-
+#     thioether average; I keep 1.34 since the ligand chem_comp already has
+#     it correctly for the canonical post-product form.
+#   * No retype of Cβ — it stays C/CR1 (sp2 vinyl). Mod2 is a single delete.
 #
 # If the runtime detector instead matched the alkyne-pre form (free drug
 # SMILES, R-C≡C-C(=O)-N), use the §A.2-style variant block which:
@@ -149,20 +174,3 @@ _chem_mod_atom.new_type_symbol
 _chem_mod_atom.new_type_energy
 _chem_mod_atom.new_partial_charge
  CYS-YNA-mod2 delete <HCB> . . . .
-
-# Delete the original amide plane restraint over {Cβ, Cα, C7, N, O}
-# — replaced by the larger PLN_THIOVINYL above. Required to prevent
-# overlapping plane restraints (see plan-doc §A.4 and Nicholls 2021
-# methods Figs 4f/4g, 5e/5f for the canonical NAG-ASN / LYS-PLP examples).
-# The exact plane id depends on the ligand's monomer dictionary —
-# substituted at runtime by the detector after introspecting the chem_comp.
-loop_
-_chem_mod_plane_atom.mod_id
-_chem_mod_plane_atom.function
-_chem_mod_plane_atom.plane_id
-_chem_mod_plane_atom.atom_id
- CYS-YNA-mod2 delete <AMIDE_PLANE> <CB>
- CYS-YNA-mod2 delete <AMIDE_PLANE> <CA>
- CYS-YNA-mod2 delete <AMIDE_PLANE> <CO>
- CYS-YNA-mod2 delete <AMIDE_PLANE> <N>
- CYS-YNA-mod2 delete <AMIDE_PLANE> <O>

@@ -27,6 +27,16 @@ export interface CovLinkAtomMap {
     ca: string;
     /** Carbonyl-C atom-id (the C of the amide group). */
     co: string;
+    /**
+     * Cγ atom-id (the substituent past Cβ on the side opposite to Cα).
+     * For methyl butynamides (XQQ acalabrutinib) this is C21 — the methyl C.
+     * For extended-methyl variants this is the CH₂- linker. For terminal
+     * propiolamides (Spebrutinib-class) this is the H atom that takes the
+     * place where the methyl would be — the detector resolves it as the
+     * H name in that case.
+     * Used in v2 plane + dihedral restraints (per AceDRG convention).
+     */
+    cg: string;
     /** Amide-N atom-id. */
     n: string;
     /** Carbonyl-O atom-id. */
@@ -43,14 +53,6 @@ export interface CovLinkAtomMap {
      * Empty string when the input is the post-product form.
      */
     hca?: string;
-    /**
-     * Original amide-plane restraint id in the ligand monomer dict.
-     * Substituted into <AMIDE_PLANE> placeholders so the mod2 can
-     * delete the overlapping plane. Empty string ⇒ no overlapping
-     * plane exists in the ligand dict (the mod2 plane-delete block
-     * becomes a harmless no-op).
-     */
-    amidePlane?: string;
 }
 
 /** A registry entry from cov-links/index.json. */
@@ -124,26 +126,25 @@ export async function loadLinkCifTemplate(
  *   <LIG>          → atomMap.lig
  *   <CB>           → atomMap.cb
  *   <CA>           → atomMap.ca
+ *   <CG>           → atomMap.cg
  *   <CO>           → atomMap.co
  *   <N>            → atomMap.n
  *   <O>            → atomMap.o
  *   <HCB>          → atomMap.hcb   (post-product input only)
  *   <HCA>          → atomMap.hca   (alkyne input only)
- *   <AMIDE_PLANE>  → atomMap.amidePlane (empty ⇒ kept as-is harmlessly)
  */
 export function applyAtomMap(cifText: string, atomMap: CovLinkAtomMap): string {
     const replacements: [RegExp, string][] = [
         [/<LIG>/g, atomMap.lig],
         [/<CB>/g, atomMap.cb],
         [/<CA>/g, atomMap.ca],
+        [/<CG>/g, atomMap.cg],
         [/<CO>/g, atomMap.co],
         [/<N>/g, atomMap.n],
         [/<O>/g, atomMap.o],
     ];
     if (atomMap.hcb) replacements.push([/<HCB>/g, atomMap.hcb]);
     if (atomMap.hca) replacements.push([/<HCA>/g, atomMap.hca]);
-    if (atomMap.amidePlane)
-        replacements.push([/<AMIDE_PLANE>/g, atomMap.amidePlane]);
 
     let result = cifText;
     for (const [pattern, value] of replacements) {
@@ -239,8 +240,7 @@ export function buildAtomMap(
     atoms: LigandAtom[],
     bonds: LigandBond[],
     cbIdx: number,
-    caIdx: number,
-    amidePlane?: string
+    caIdx: number
 ): CovLinkAtomMap {
     const neighborsOf = (i: number): number[] =>
         bonds
@@ -295,18 +295,40 @@ export function buildAtomMap(
         );
     }
 
+    // Find Cγ: the substituent on Cβ that is NOT Cα and NOT an H. For most
+    // F2 ligands this is a carbon (methyl, CH₂-R, aryl). For terminal
+    // propiolamide it'll be the H — Spebrutinib-style, see Plan-doc §A.3.
+    const cbNeighbors = neighborsOf(cbIdx);
+    let cgIdx = cbNeighbors.find(
+        (i) => i !== caIdx && atoms[i].element === "C"
+    );
+    if (cgIdx === undefined) {
+        // Terminal propiolamide case: use the H bonded to Cβ as Cγ
+        cgIdx = cbNeighbors.find(
+            (i) => i !== caIdx && atoms[i].element === "H"
+        );
+    }
+    if (cgIdx === undefined) {
+        throw new Error(
+            `buildAtomMap: could not find Cγ neighbor of Cβ (${atoms[cbIdx].name})`
+        );
+    }
+
     // Find an H bonded to Cβ (for post-product input — may not exist for
-    // alkyne input where Cβ has no H).
-    const hcbIdx = neighborsOf(cbIdx).find((i) => atoms[i].element === "H");
+    // alkyne input where Cβ has no H). Note: in the terminal propiolamide
+    // case Cγ IS the H, so hcb stays undefined (no other H to delete).
+    const hcbIdx = cbNeighbors.find(
+        (i) => i !== cgIdx && atoms[i].element === "H"
+    );
 
     return {
         lig,
         cb: atoms[cbIdx].name,
         ca: atoms[caIdx].name,
+        cg: atoms[cgIdx].name,
         co: atoms[coIdx].name,
         n: atoms[nIdx].name,
         o: atoms[oIdx].name,
         hcb: hcbIdx !== undefined ? atoms[hcbIdx].name : undefined,
-        amidePlane,
     };
 }

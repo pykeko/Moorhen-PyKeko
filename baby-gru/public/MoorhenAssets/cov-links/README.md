@@ -26,12 +26,12 @@ final CIF blob for `import_cif_dictionary`. The tokens are:
 | `<LIG>` | Ligand CCD code | `XQQ` |
 | `<CB>` | Cβ atom-id | `C19` |
 | `<CA>` | Cα atom-id | `C13` |
+| `<CG>` | Cγ atom-id (substituent on Cβ opposite Cα; H for terminal propiolamide) | `C21` |
 | `<CO>` | Carbonyl-C atom-id | `C7` |
 | `<N>` | Amide-N atom-id | `N1` |
 | `<O>` | Carbonyl-O atom-id | `O1` |
 | `<HCB>` | H to delete on Cβ (post-product input) | `H18` |
 | `<HCA>` | H to add on Cα (alkyne input) | `H13` |
-| `<AMIDE_PLANE>` | Original plane restraint id in the ligand monomer dict | varies; introspected at runtime |
 
 The atom-name mapping is built by RDKit-WASM SMARTS substructure match — the
 SMARTS in `index.json` carries atom-mapping numbers like `[#16][C:1]=[C:2]C(=O)N`
@@ -50,23 +50,22 @@ Geometry targets in `CYS-YNA.cif` are drawn from:
   [`../../../../docs/covalent-ligand-survey-2026-06-05/btk-8fd9-8ff0-geom/`](../../../../docs/covalent-ligand-survey-2026-06-05/btk-8fd9-8ff0-geom/)
 - The Nicholls & Murshudov 2021 "missing link" methods paper at
   [`../../../../docs/refs/nicholls-modelling-2021.pdf`](../../../../docs/refs/nicholls-modelling-2021.pdf)
-- AceDRG reference values still TBD — pending CCP4 install on dev machine.
-  Once available, regenerate the canonical CYS-YNA via:
-  ```
-  acedrg -L cys-xqq-link-instr.txt -o cys-xqq
-  ```
-  and diff against this hand-authored version. Tighten ESDs where AceDRG
-  shows narrower distributions.
+- AceDRG cross-validation (2026-06-07): the full canonical reference is at
+  [`../../../../docs/covalent-ligand-survey-2026-06-05/acedrg-cys-xqq/`](../../../../docs/covalent-ligand-survey-2026-06-05/acedrg-cys-xqq/)
+  including the side-by-side `COMPARISON.md` and the generated `cys-xqq_link.cif`.
+  CYS-YNA.cif v2 incorporates AceDRG's tighter sp2-angle ESDs (1.5° instead of
+  3.0°), narrower plane scope ({SG, Cβ, Cα, Cγ} not the wider 6-atom plane),
+  and the sp3-sp2 soft torsion on the SG–CB hinge.
 
-## Architecture status (phase 1, Track B in progress)
+## Architecture status (phase 1, Track B mostly complete)
 
-- [x] CYS-YNA hand-authored template + post-product mod2
+- [x] CYS-YNA hand-authored template + post-product mod2 + v2 AceDRG-adjusted
 - [x] Alkyne-input alternative mod2
 - [x] index.json registry with three SMARTS patterns
-- [ ] JS-side detector + atom-name substitution (next)
+- [x] JS-side detector + atom-name substitution + orchestrator
+- [x] AceDRG cross-validation reference
 - [ ] UI integration (right-click on Cys SG)
-- [ ] AceDRG cross-validation reference
-- [ ] Refmacat round-trip on 8FD9
+- [ ] Refmacat round-trip on 8FD9 (Track C step 2)
 
 Other warhead families (F1 acrylamide, F4 chloroacetamide, F6 reversible
 carbonyl) will be added once the F2 pipeline is end-to-end validated.

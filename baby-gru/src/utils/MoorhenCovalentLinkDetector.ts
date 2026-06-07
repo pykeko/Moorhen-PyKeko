@@ -56,17 +56,20 @@ const neighborsOf = (
  * @param atoms ligand atom list (name + element)
  * @param bonds ligand bond list (a/b indices + order)
  * @param cbIdx Cβ candidate (the carbon that would bond to Cys SG)
- * @param amidePlane optional plane-id of the ligand's existing amide-plane
- *        restraint (substituted into the mod2's plane-delete block)
  * @returns null if no family matches; the result with entry + atom map
  *          on success
+ *
+ * Note: pre-v2 had an `amidePlane` parameter that fed a now-deleted
+ * <AMIDE_PLANE> placeholder substitution. The v2 link CIF scopes its plane
+ * narrowly to {SG, Cβ, Cα, Cγ} so it no longer overlaps the ligand's amide
+ * plane — the parameter is no longer needed (see AceDRG cross-validation
+ * comparison at docs/.../acedrg-cys-xqq/COMPARISON.md).
  */
 export async function detectWarheadFamily(
     lig: string,
     atoms: LigandAtom[],
     bonds: LigandBond[],
-    cbIdx: number,
-    amidePlane?: string
+    cbIdx: number
 ): Promise<DetectionResult | null> {
     const registry = await ensureRegistryLoaded();
 
@@ -122,8 +125,7 @@ export async function detectWarheadFamily(
             atoms,
             bonds,
             cbIdx,
-            caIdx,
-            amidePlane
+            caIdx
         );
 
         return { entry, atomMap, cbIdx, caIdx };

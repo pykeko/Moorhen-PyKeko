@@ -38,29 +38,18 @@ const xqqBonds = [
 ];
 
 describe("buildAtomMap", () => {
-    test("XQQ (acalabrutinib): walks Cβ → Cα → carbonyl-C → N + =O", () => {
+    test("XQQ (acalabrutinib): walks Cβ → Cα → carbonyl-C → N + =O + Cγ", () => {
         const cbIdx = 0; // C19
         const caIdx = 1; // C13
         const map = buildAtomMap("XQQ", xqqAtoms, xqqBonds, cbIdx, caIdx);
         expect(map.lig).toBe("XQQ");
         expect(map.cb).toBe("C19");
         expect(map.ca).toBe("C13");
+        expect(map.cg).toBe("C21"); // v2: Cγ = methyl on Cβ side
         expect(map.co).toBe("C7");
         expect(map.n).toBe("N1");
         expect(map.o).toBe("O1");
         expect(map.hcb).toBe("H18"); // post-product input
-    });
-
-    test("optional amidePlane is passed through unchanged", () => {
-        const map = buildAtomMap(
-            "XQQ",
-            xqqAtoms,
-            xqqBonds,
-            0,
-            1,
-            "plane-amide"
-        );
-        expect(map.amidePlane).toBe("plane-amide");
     });
 
     test("alkyne pre-Michael input: no H on Cβ", () => {
@@ -119,6 +108,7 @@ _chem_link_plane.atom_id
             lig: "XQQ",
             cb: "C19",
             ca: "C13",
+            cg: "C21",
             co: "C7",
             n: "N1",
             o: "O1",
@@ -134,16 +124,16 @@ _chem_link_plane.atom_id
     });
 
     test("optional tokens kept when undefined: no spurious substitution", () => {
-        const template = `<AMIDE_PLANE>: still here\n<CB>: substituted`;
-        const map = { lig: "X", cb: "C19", ca: "C13", co: "C7", n: "N", o: "O" };
+        const template = `<HCA>: still here\n<CB>: substituted`;
+        const map = { lig: "X", cb: "C19", ca: "C13", cg: "C21", co: "C7", n: "N", o: "O" };
         const out = applyAtomMap(template, map);
-        expect(out).toContain("<AMIDE_PLANE>:");
+        expect(out).toContain("<HCA>:");
         expect(out).toContain("C19: substituted");
     });
 
     test("idempotent: running twice yields the same result as once", () => {
         const template = `<LIG>/<CB>=<CA>`;
-        const map = { lig: "XQQ", cb: "C19", ca: "C13", co: "C7", n: "N", o: "O" };
+        const map = { lig: "XQQ", cb: "C19", ca: "C13", cg: "C21", co: "C7", n: "N", o: "O" };
         const once = applyAtomMap(template, map);
         const twice = applyAtomMap(once, map);
         expect(twice).toBe(once);
