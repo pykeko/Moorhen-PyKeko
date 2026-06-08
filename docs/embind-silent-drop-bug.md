@@ -123,12 +123,34 @@ None of them include `<emscripten.h>`.
 
 ### 0. Workaround: do the work on the JS side
 For features that need to mutate the molecule (like covalent-link
-declaration), the bond can be expressed by injecting a `_struct_conn`
-loop into the model's mmCIF as a post-export step. See
-[`covalent-ligand-plan.md`](covalent-ligand-plan.md) and the
-`MoorhenCovalentLinkSurgery.ts` helpers shipped at commit `77c8d490`.
+declaration), the work can be done by reading the model's mmCIF via
+`molecule_to_mmCIF_string_with_gemmi` (works — pre-existing binding),
+mutating the text in JS, and writing it back via
+`replace_molecule_by_model_from_string` (also works). For pure-read
+features (like a torsion angle), parse the mmCIF and compute in JS.
 
-This sidesteps the bug entirely — no new WASM binding needed.
+Pieces of this approach shipped 2026-06-07/08:
+
+| Broken WASM binding | JS-side replacement | File |
+|---|---|---|
+| `make_covalent_link_using_cids` | `appendStructConnLoop` (struct_conn surgery, returns augmented mmCIF for refmac) | `baby-gru/src/utils/MoorhenCovalentLinkSurgery.ts` |
+| `get_torsion` | `getTorsionFromMmcif` / `getTorsionJs` (parse 4 atom coords + cross-product dihedral) | `baby-gru/src/utils/MoorhenEmbindWorkarounds.ts` |
+| `add_water_at_position` | `addWaterAtPositionJs` (append HETATM HOH row, auto-increments seqNum in solvent chain, falls back to chain "X" if no solvent chain exists) | `baby-gru/src/utils/MoorhenEmbindWorkarounds.ts` |
+
+Verified end-to-end on 8FD9 in PyKekoDev:
+- `get_torsion`: CYS A:481 χ1 (N-CA-CB-SG) = 62.4° (realistic)
+- `add_water_at_position`: three sequential adds produced `/1/X/1`,
+  `/1/X/2`, `/1/X/3`; atom count grew 4757 → 4760
+
+**Still TODO** (medium-cost workarounds, not yet written):
+- `set_phi_psi`: needs Rodrigues rotation matrix applied to specific
+  atom sets in the model mmCIF (~3-4 hours)
+- `get_ncs_ghost_matrix`: needs JS Kabsch/SVD superposition, or wrap
+  an existing working coot `lsq_*` binding if one exists (~2-8 hours
+  depending on which path)
+- All four `make_covalent_link*` / `delete_covalent_link*` family —
+  the `make_covalent_link_using_cids` path is covered by the
+  struct_conn surgery; the others have no current caller.
 
 ### 1. Quick fix: force-define EMSCRIPTEN in CMakeLists.txt
 Add `-DEMSCRIPTEN` to the build flags:

@@ -15,6 +15,7 @@ import { webGL } from "../types/mgWebGL";
 import { moorhen } from "../types/moorhen";
 import { privateer } from "../types/privateer";
 import { ColourRule } from "./MoorhenColourRule";
+import { addWaterAtPositionJs } from "./MoorhenEmbindWorkarounds";
 import { MoleculeRepresentation, gaussianSurfSettings, m2tParameters, residueEnvironmentOptions } from "./MoorhenMoleculeRepresentation";
 import {
     centreOnGemmiAtoms,
@@ -2729,14 +2730,11 @@ export class MoorhenMolecule {
      * redraw picks up the new residue.
      */
     async addWaterAtPosition(x: number, y: number, z: number): Promise<string | null> {
-        const result = (await this.commandCentre.current.cootCommand({
-            returnType: "status",
-            command: "add_water_at_position",
-            commandArgs: [this.molNo, x, y, z],
-            changesMolecules: [this.molNo],
-        }, true)) as moorhen.WorkerResponse<string>;
-        const cid = result.data.result.result;
-        if (!cid || typeof cid !== "string" || cid.length === 0) return null;
+        // JS-side workaround for the broken add_water_at_position WASM binding —
+        // see docs/embind-silent-drop-bug.md. Uses molecule_to_mmCIF_string_with_gemmi
+        // + replace_molecule_by_model_from_string under the hood.
+        const cid = await addWaterAtPositionJs(this.commandCentre.current, this.molNo, x, y, z);
+        if (!cid) return null;
         this.setAtomsDirty(true);
         return cid;
     }

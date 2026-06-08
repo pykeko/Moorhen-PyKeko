@@ -188,8 +188,9 @@ the `EMSCRIPTEN` macro (no longer command-line-defined; coot's headers still
 use the old form without `<emscripten.h>` include).
 
 Full write-up, repro, and fix options: [`docs/embind-silent-drop-bug.md`](docs/embind-silent-drop-bug.md).
-Workaround for covalent links (JS-side `_struct_conn` surgery): shipped at
-77c8d490 — see [`docs/covalent-ligand-plan.md`](docs/covalent-ligand-plan.md).
+JS-side workarounds shipped: covalent links (77c8d490), `get_torsion`
++ `add_water_at_position` (this commit). `set_phi_psi` and
+`get_ncs_ghost_matrix` remain silently broken until upstream fix.
 
 ---
 

@@ -10,6 +10,7 @@ import { useCommandCentre } from "../../InstanceManager";
 import { moorhen } from "../../types/moorhen";
 import { MoorhenSlider } from "../inputs";
 import { MoorhenContextButtonBase, ContextButtonProps } from "./MoorhenContextButtonBase";
+import { getTorsionJs } from "../../utils/MoorhenEmbindWorkarounds";
 
 // Standard χ definitions (atom quads, by residue type). ALA/GLY have none.
 const CHI_DEFS: { [key: string]: string[][] } = {
@@ -87,10 +88,9 @@ const TorsionEditorPanel = (props: {
             for (const quad of chiDefs) {
                 let v = 0;
                 try {
-                    const r = await commandCentre.current.cootCommand(
-                        { command: "get_torsion", commandArgs: [molecule.molNo, cid, quad.map(pad)], returnType: "status" }, false);
-                    const rr: any = r?.data?.result?.result;
-                    const got = rr && typeof rr === "object" ? (rr.second ?? rr[1]) : (typeof rr === "number" ? rr : null);
+                    // JS-side workaround for the broken get_torsion WASM binding —
+                    // see docs/embind-silent-drop-bug.md.
+                    const got = await getTorsionJs(commandCentre.current, molecule.molNo, cid, quad);
                     if (typeof got === "number") v = Math.round(got);
                 } catch (e) { /* leave at 0 */ }
                 vals.push(v);
