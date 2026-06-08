@@ -176,6 +176,21 @@ This makes Moorhen's WASM loader fall back to the 32-bit module.
 
 WASM pthread workers need to spawn child workers. `sandbox: false` in `webPreferences` allows this.
 
+### Known upstream regression: embind silent-drop (emscripten ≥ 5.0.4)
+
+Newly-added `.function()` lines in `wasm_src/moorhen-*.cc` silently fail to
+register at runtime under emscripten 5.0.4+ — the binding name is in the
+WASM but doesn't get installed on the runtime instance. Affects task #148
+covalent bindings + 4 pre-existing PyKeko features (set_phi_psi, get_torsion,
+add_water_at_position, get_ncs_ghost_matrix) that have been silent no-ops in
+shipped v0.2.x. Root cause is an ODR violation caused by the 5.0.4 change to
+the `EMSCRIPTEN` macro (no longer command-line-defined; coot's headers still
+use the old form without `<emscripten.h>` include).
+
+Full write-up, repro, and fix options: [`docs/embind-silent-drop-bug.md`](docs/embind-silent-drop-bug.md).
+Workaround for covalent links (JS-side `_struct_conn` surgery): shipped at
+77c8d490 — see [`docs/covalent-ligand-plan.md`](docs/covalent-ligand-plan.md).
+
 ---
 
 ## Build Instructions (from scratch on a new Mac)
