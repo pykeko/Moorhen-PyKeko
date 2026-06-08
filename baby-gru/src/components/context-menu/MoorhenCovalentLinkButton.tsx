@@ -223,22 +223,37 @@ const LinkPanel = (props: {
 
     const statusColor = statusKind === "error" ? "#e03131" : statusKind === "success" ? "#2f9e44" : "#495057";
 
-    // The overlay container fixes us to wherever the right-click happened, which
-    // often sits right over the atoms the user is trying to pick. Wrap in a
-    // Draggable so the header acts as a drag handle and the user can move the
-    // panel out of the way without dismissing it.
+    // Render at a fixed viewport position (top-right) rather than at the
+    // right-click coordinates. The context-menu wrapper is position:absolute
+    // at the click site, which would otherwise drop the panel directly on
+    // the atoms the user is trying to pick next. position:fixed escapes the
+    // absolute parent's coordinate frame and pins us to the viewport corner
+    // — but keeps the DOM hierarchy intact, so the popover's ClickAwayListener
+    // still treats clicks inside the panel as inside the popover.
+    //
+    // Still draggable: the grey header bar with the grab dots acts as the drag
+    // handle (cursor: move on hover), so the user can move it anywhere they
+    // want without dismissing it.
     const dragNodeRef = useRef<HTMLDivElement>(null);
 
     return (
         <Draggable handle=".pykeko-covlink-header" nodeRef={dragNodeRef}>
         <div ref={dragNodeRef} style={{
-            padding: 16, background: "white", border: "1px solid #ccc",
+            position: "fixed", top: 80, right: 16, zIndex: 2000,
+            background: "white", border: "1px solid #ccc",
             borderRadius: 8, minWidth: 420, maxWidth: 520, boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
         }}>
-            <h6 className="pykeko-covlink-header" style={{ marginTop: 0, marginBottom: 12, cursor: "move", userSelect: "none" }}
-                title="Drag to reposition">
-                Declare covalent link
-            </h6>
+            <div className="pykeko-covlink-header" style={{
+                cursor: "move", userSelect: "none",
+                background: "#e9ecef", borderTopLeftRadius: 8, borderTopRightRadius: 8,
+                padding: "8px 12px", display: "flex", alignItems: "center", gap: 10,
+                fontSize: "0.95rem", color: "#212529", fontWeight: 600,
+                borderBottom: "1px solid #ced4da",
+            }} title="Drag to reposition">
+                <span style={{ fontSize: "1rem", color: "#868e96", letterSpacing: "-2px" }}>⋮⋮</span>
+                <span>Declare covalent link</span>
+            </div>
+            <div style={{ padding: 16 }}>
             <div style={{ marginBottom: 10 }}>
                 <label style={{ display: "block", fontSize: "0.85rem", color: "#495057" }}>Cys SG (from right-click)</label>
                 <code style={{ fontSize: "0.95rem", color: "#212529" }}>{sgCid}</code>
@@ -306,6 +321,7 @@ const LinkPanel = (props: {
             {status && (
                 <div style={{ marginTop: 10, fontSize: "0.85rem", color: statusColor }}>{status}</div>
             )}
+            </div>
         </div>
         </Draggable>
     );
