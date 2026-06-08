@@ -170,36 +170,52 @@ Could be a patch in `coot-patches/`, or a PR upstream to
 Less invasive than (2) but only fixes the affected files; future code
 re-uses the same trap.
 
+## Diagnostic state as of 2026-06-08
+
+What we've ruled out (each tested against pristine upstream + cold-built
+or relinked):
+
+| Hypothesis | Test | Result |
+|---|---|---|
+| ODR violation from 5.0.4 EMSCRIPTEN macro change | `-DEMSCRIPTEN` injected into CMAKE_CXX_FLAGS, verified in coot.dir/flags.make, suspect .cc files recompiled | Refuted — bug persists |
+| emscripten version regression (5.0.4-5.0.7 vs 5.0.3) | Installed emscripten 5.0.3, cold-built pristine | Refuted — bug present in 5.0.3 too |
+| Static-init order across the link | Added pk_test_in_last_file binding in a brand-new pk_test_last.cc, placed LAST in the moorhen target's source list | Refuted — last-linked file's binding also undefined |
+| wasm-opt post-process dropping registrations | Relinked at `-O0` (skips wasm-opt), WASM grew from 19MB to 23MB confirming wasm-opt didn't run | Refuted — bug persists |
+
+What's left to investigate (in cost order):
+
+- **Interaction with `-pthread` or `-fwasm-exceptions`** — both are in
+  Moorhen's link flags. Try a link without each.
+- **`--bind` flag behavior** — embind's `--bind` link arg might have
+  changed behavior. Check the version-pinned binaryen behavior under
+  it.
+- **A specific cap or threshold inside embind's JS-side type registry**
+  — when `_embind_register_class_function` is called, JS-side
+  bookkeeping happens. Maybe an array index or counter wraps for
+  large class registries. (Moorhen has 300+ bindings registered.)
+  Could test by removing some existing bindings.
+
+The pattern "8 of 312 source bindings silently fail, and they're
+exactly the most-recently-added ones" suggests the bug is something
+that DEPENDS on the binding REGISTERED INDEX rather than its source
+position. That would happen if, e.g., embind's `__getTypeName` table
+or a similar JS-side array overflows past a 256/512/1024 entry.
+
 ## TODOs
 
-- [x] **Verify the -DEMSCRIPTEN fix** — TESTED, did NOT fix. See §1.
-- [x] **Test against emscripten 5.0.3** — TESTED, bug reproduces. Not
-      a version regression. See "Not a recent version regression" §
-      above.
+- [x] Verify the -DEMSCRIPTEN fix — refuted
+- [x] Test against emscripten 5.0.3 — refuted
+- [x] Test static-init order with a last-linked .cc — refuted
+- [x] Test without wasm-opt (-O0 link) — refuted
 - [ ] **Fix the PyKeko fork relationship** — `hilgersmt/Moorhen-PyKeko`
-      currently isn't set up as a proper GitHub fork of
-      `moorhen-coot/Moorhen`. Convert it so PRs / issues / fork-aware
-      tooling work normally. Until then, filing an upstream issue from
-      our user identity will look like an unaffiliated bug report.
-- [ ] **File the upstream issue** at `moorhen-coot/Moorhen` (after the
-      fork relationship is fixed). Min repro is above. Include:
-      - Both 5.0.3 and 5.0.7 reproduce (not a version regression)
-      - `-DEMSCRIPTEN` workaround doesn't fix
-      - The minimum repro is a single `function()` line addition to
-        `wasm_src/moorhen-types-wrappers.cc`
-      - Stuart's existing bindings work fine; only NEW additions fail
-- [ ] **Investigate other ODR sites or build settings** that could
-      explain the bug:
-      - Other `#ifdef EMSCRIPTEN` sites in coot beyond
-        validation-information.hh (molecules-container-maps.cc,
-        molecules-container.cc, molecules-container-ligand-fitting.cc)
-      - LTO behavior at -O2: try a -O0 build and see if registrations
-        come back
-      - Static-init order across libcoot.a → moorhen.wasm link: try
-        adding the test binding to a NEW .cc file that becomes the
-        last .o in the link list
-      - The binaryen post-processing pass (wasm-opt with -O2 settings)
-        — try `--no-wasm-opt` or equivalent
+      currently isn't a proper GitHub fork of `moorhen-coot/Moorhen`.
+      Convert it before filing the upstream issue.
+- [ ] **File the upstream issue** at `moorhen-coot/Moorhen`. Min repro:
+      single `function("pk_test_int_only", +[](int a, int b) { return
+      a + b; });` in `wasm_src/moorhen-types-wrappers.cc`, cold build,
+      observe `cootModule.pk_test_int_only === undefined` while
+      `cootModule.validate === function`. Include the refuted-hypothesis
+      table above so upstream knows what's already been tried.
 
 ## Diagnostic process (for future-me)
 
