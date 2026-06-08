@@ -83,15 +83,50 @@ export const parsePymolScript = (src: string): PymolCommand[] => {
 
     const cmds: PymolCommand[] = [];
     for (const { text, lineNo } of joined) {
-        const trimmed = text.trim();
-        if (!trimmed) continue;
-        // First whitespace token is the command name; remainder is the arg-string
-        const m = trimmed.match(/^(\S+)\s*(.*)$/);
-        if (!m) continue;
-        const cmd = m[1].toLowerCase();
-        const argStr = m[2];
-        const args = argStr.length === 0 ? [] : splitArgs(argStr);
-        cmds.push({ cmd, args, rawLine: trimmed, lineNo });
+        // PyMOL allows multiple commands on one line, separated by `;`. Split
+        // each joined line on top-level semicolons (not inside quotes, not
+        // inside parens) so `hide spheres; color green, elem c` parses as
+        // two distinct commands. Without this, the entire remainder gets
+        // glued to the first command's arg list and the second command is
+        // never seen.
+        for (const segment of splitTopLevel(text, ";")) {
+            const trimmed = segment.trim();
+            if (!trimmed) continue;
+            const m = trimmed.match(/^(\S+)\s*(.*)$/);
+            if (!m) continue;
+            const cmd = m[1].toLowerCase();
+            const argStr = m[2];
+            const args = argStr.length === 0 ? [] : splitArgs(argStr);
+            cmds.push({ cmd, args, rawLine: trimmed, lineNo });
+        }
     }
     return cmds;
+};
+
+/**
+ * Split a string on a single-char delimiter at top level — respects
+ * "..." / '...' quoting and (...) nesting. Used to split PyMOL command
+ * sequences on `;` without breaking selectors that contain quoted text.
+ */
+const splitTopLevel = (src: string, delim: string): string[] => {
+    const out: string[] = [];
+    let depth = 0;
+    let inDouble = false;
+    let inSingle = false;
+    let buf = "";
+    for (let i = 0; i < src.length; i++) {
+        const c = src[i];
+        if (c === '"' && !inSingle) { inDouble = !inDouble; buf += c; }
+        else if (c === "'" && !inDouble) { inSingle = !inSingle; buf += c; }
+        else if (c === "(" && !inDouble && !inSingle) { depth++; buf += c; }
+        else if (c === ")" && !inDouble && !inSingle) { depth--; buf += c; }
+        else if (c === delim && depth === 0 && !inDouble && !inSingle) {
+            out.push(buf);
+            buf = "";
+        } else {
+            buf += c;
+        }
+    }
+    out.push(buf);
+    return out;
 };
