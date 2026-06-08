@@ -10,13 +10,15 @@
 import { MoorhenMolecule } from "../utils/MoorhenMolecule";
 import { MoorhenMap } from "../utils/MoorhenMap";
 import { MoorhenScriptApi } from "../utils/MoorhenScriptAPI";
+import { MoorhenTimeCapsule } from "../utils/MoorhenTimeCapsule";
+import { moorhensession } from "../protobuf/MoorhenSession";
 import { addMolecule, showMolecule } from "../store/moleculesSlice";
 import { addMap } from "../store/mapsSlice";
 import { setActiveMap } from "../store/generalStatesSlice";
 import { triggerUpdate } from "../store/moleculeMapUpdateSlice";
 import { setRequestDrawScene } from "../store/glRefSlice";
 
-type Ctx = { commandCentre: any; store: any; dispatch: any; monomerLibraryPath: string; videoRecorderRef?: any };
+type Ctx = { commandCentre: any; store: any; dispatch: any; monomerLibraryPath: string; videoRecorderRef?: any; timeCapsule?: any };
 
 const DEFAULT_MTZ_COLUMNS = {
   F: "FWT", PHI: "PHWT", Fobs: "FP", SigFobs: "SIGFP", FreeR: "FREE",
@@ -153,14 +155,21 @@ export function createControlApi(ctx: Ctx) {
       const isCoordExt = (n: string) => /\.(pdb|ent|cif|mmcif)$/i.test(n);
       const isMtz = (n: string) => /\.mtz$/i.test(n);
       const isMapExt = (n: string) => /\.(mrc|map|ccp4)(\.gz)?$/i.test(n);
+      const isSession = (n: string) => /\.(pykeko|pb)$/i.test(n);
 
       const coordFiles: { name: string; text: string }[] = [];
       const dictFiles: { name: string; text: string }[] = [];
       const mtzFiles: { name: string; bytes: Uint8Array }[] = [];
       const mapFiles: { name: string; base64: string }[] = [];
+      const sessionFiles: { name: string; bytes: Uint8Array }[] = [];
 
       for (const spec of fileSpecs) {
-        if (isCoordExt(spec.name)) {
+        if (isSession(spec.name)) {
+          // Session files have highest precedence — they restore the whole scene.
+          // If a user does `pykeko session.pykeko other.pdb` we still load the
+          // session, then the other.pdb on top of the restored state.
+          sessionFiles.push({ name: spec.name, bytes: b64ToUint8(spec.dataBase64) });
+        } else if (isCoordExt(spec.name)) {
           const text = decoder.decode(b64ToUint8(spec.dataBase64));
           const isDict = /data_comp_\S/i.test(text) && !/_atom_site\.\s/.test(text);
           (isDict ? dictFiles : coordFiles).push({ name: spec.name, text });
@@ -169,10 +178,37 @@ export function createControlApi(ctx: Ctx) {
         } else if (isMapExt(spec.name)) {
           mapFiles.push({ name: spec.name, base64: spec.dataBase64 });
         }
-        // unknown extensions (e.g. .pb sessions, .json) are not handled via the CLI path yet
       }
 
       const results: any[] = [];
+
+      // 0. Sessions — restore the whole scene first, then load other files on top.
+      // The Electron wrapper passes .pykeko/.pb session files here on CLI launch
+      // (`pykeko session.pykeko`); previously these silently fell through to
+      // "unknown extension" and nothing appeared in the viewer.
+      for (const f of sessionFiles) {
+        if (!ctx.timeCapsule) {
+          results.push({ file: f.name, type: "error", error: "session load needs the TimeCapsule context (not wired)" });
+          continue;
+        }
+        try {
+          const msg = moorhensession.Session.decode(f.bytes as any, undefined, undefined);
+          const status = await MoorhenTimeCapsule.loadSessionFromProtoMessage(
+            msg,
+            monomerLibraryPath,
+            getMolecules(),
+            getMaps(),
+            commandCentre,
+            ctx.timeCapsule,
+            store,
+            dispatch,
+          );
+          results.push({ file: f.name, type: "session", status });
+        } catch (e: any) {
+          results.push({ file: f.name, type: "error", error: `session restore failed: ${e?.message || e}` });
+        }
+      }
+
       const preExisting = getMolecules();
       const loadedMols: any[] = [];
 

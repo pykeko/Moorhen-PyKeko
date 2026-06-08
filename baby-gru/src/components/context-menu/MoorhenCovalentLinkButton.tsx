@@ -22,6 +22,7 @@ import {
     findAtomInModel,
     appendStructConnLoop,
 } from "../../utils/MoorhenCovalentLinkSurgery";
+import { cidToSpec } from "../../utils/utils";
 
 interface LinkRegistryItem {
     id: string;
@@ -46,17 +47,31 @@ const LinkPanel = (props: {
     const [status, setStatus] = useState("");
     const [statusKind, setStatusKind] = useState<"info" | "error" | "success">("info");
 
-    // Load the cov-links registry on mount
+    // Load the cov-links registry on mount.
+    //
+    // urlPrefix defaults to "MoorhenAssets" (see MoorhenWebComponent.tsx:76 —
+    // it's the assets-dir prefix, NOT a server-root prefix). So the URL is
+    // ${urlPrefix}/cov-links/index.json, NOT ${urlPrefix}/MoorhenAssets/...
+    // which doubles the prefix; the static server falls back to index.html
+    // for the missing path, and JSON.parse chokes on "<!doctype" (the bug
+    // that bit a fresh v0.2.21 install).
     useEffect(() => {
         (async () => {
             try {
-                const resp = await fetch(`${urlPrefix}/MoorhenAssets/cov-links/index.json`);
+                const url = `${urlPrefix}/cov-links/index.json`;
+                const resp = await fetch(url);
                 if (!resp.ok) {
-                    setStatus(`Could not load cov-links registry (${resp.status})`);
+                    setStatus(`Could not load cov-links registry (${resp.status} from ${url})`);
                     setStatusKind("error");
                     return;
                 }
-                const data = await resp.json();
+                const text = await resp.text();
+                if (text.trimStart().startsWith("<")) {
+                    setStatus(`Registry URL ${url} returned HTML — wrong assets path`);
+                    setStatusKind("error");
+                    return;
+                }
+                const data = JSON.parse(text);
                 const items: LinkRegistryItem[] = (data?.warheads || []).map((w: any) => ({
                     id: w.id, name: w.name, family: w.family, link_cif: w.link_cif,
                 }));
@@ -73,19 +88,34 @@ const LinkPanel = (props: {
     // "Pick ligand atom" button. Same pattern used by MoorhenCreateAcedrgLinkModal
     // and MoorhenVectorsModal — the canvas (mgWebGL) dispatches "atomClicked" on
     // document with detail.label = the atom CID.
+    //
+    // The label format from parseAtomInfoLabel is
+    //   /<mol_name>/<chain>/<res_no>(<res_name>)/<atom>[:<altloc>]
+    // (mol_name is the file name like "8FD9", NOT the integer molNo). Use the
+    // existing cidToSpec helper instead of a hand-rolled regex so the format
+    // can't drift — earlier I had `^\/\d+\/...` which expected an integer
+    // mol_no and never matched, so the picked CID silently fell through.
     useEffect(() => {
         if (!picking) return;
         const onAtomClicked = (evt: any) => {
             const pickedCid = evt?.detail?.label as string | undefined;
             if (!pickedCid) { setPicking(false); return; }
-            // Normalize: detail.label can be the full /molNo/chain/res/atom form;
-            // we want the short //chain/resno/atom form for parseCid + struct_conn.
-            // Format from canvas: "/{molNo}/{chain}/{res_no}/{atom}".
-            const m = /^\/\d+\/([^/]+)\/(-?\d+)(?:\([^)]*\))?\/(.+?)(?:\/?:.*)?$/.exec(pickedCid.trim());
-            const short = m ? `//${m[1]}/${m[2]}/${m[3].trim()}` : pickedCid;
-            setCbCid(short);
-            setStatus(`Picked: ${short}`);
-            setStatusKind("info");
+            try {
+                const spec = cidToSpec(pickedCid);
+                if (!spec?.chain_id || spec.res_no === undefined || !spec.atom_name) {
+                    setStatus(`Could not parse picked CID: ${pickedCid}`);
+                    setStatusKind("error");
+                    setPicking(false);
+                    return;
+                }
+                const short = `//${spec.chain_id}/${spec.res_no}/${String(spec.atom_name).trim()}`;
+                setCbCid(short);
+                setStatus(`Picked: ${short}`);
+                setStatusKind("info");
+            } catch (e: any) {
+                setStatus(`Pick parse error: ${e?.message || e}`);
+                setStatusKind("error");
+            }
             setPicking(false);
         };
         document.addEventListener("atomClicked", onAtomClicked, { once: true });
@@ -112,7 +142,7 @@ const LinkPanel = (props: {
             // 1. Fetch the link CIF
             const entry = registry.find((r) => r.id === linkId);
             const linkCifPath = entry?.link_cif || `${linkId}.cif`;
-            const cifResp = await fetch(`${urlPrefix}/MoorhenAssets/cov-links/${linkCifPath}`);
+            const cifResp = await fetch(`${urlPrefix}/cov-links/${linkCifPath}`);
             if (!cifResp.ok) {
                 setStatus(`Could not fetch link CIF ${linkCifPath} (${cifResp.status})`);
                 setStatusKind("error");

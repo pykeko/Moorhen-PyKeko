@@ -5,7 +5,7 @@
 // (window.__moorhenControl, from preload.js) — forwards invoke messages to it.
 import { useEffect } from "react";
 import { useStore, useDispatch } from "react-redux";
-import { useCommandCentre, usePaths } from "../InstanceManager/hooks";
+import { useCommandCentre, usePaths, useTimeCapsule } from "../InstanceManager/hooks";
 import { useMoorhenInstance } from "../InstanceManager/useMoorhenInstance";
 import { createControlApi } from "./MoorhenControlApi";
 
@@ -15,6 +15,7 @@ export const MoorhenControlBridge = () => {
   const dispatch = useDispatch();
   const paths = usePaths();
   const instance = useMoorhenInstance();
+  const timeCapsule = useTimeCapsule();
 
   useEffect(() => {
     const api = createControlApi({
@@ -23,6 +24,7 @@ export const MoorhenControlBridge = () => {
       dispatch,
       monomerLibraryPath: paths?.monomerLibraryPath || "./monomers",
       videoRecorderRef: instance?.getVideoRecorderRef?.() ?? null,
+      timeCapsule,
     });
     (window as any).MoorhenControlApi = api;
 
