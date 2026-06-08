@@ -72,7 +72,15 @@ export function findAtomInModel(mmcif: string, target: CidParts): AtomSiteInfo |
     return null;
 }
 
-/** mmCIF whitespace tokenizer that respects single/double quotes. */
+/** mmCIF whitespace tokenizer that respects single/double quotes.
+ *
+ * Quoted values are stripped of their delimiters AND trimmed: gemmi (and
+ * Coot, which uses gemmi internally) writes atom names with PDB-style
+ * column padding inside quotes, so `label_atom_id` for a Cys SG comes out
+ * as `' SG '` not `SG`. Callers compare against the canonical short form
+ * `SG`, so the tokenizer trims here once rather than every consumer
+ * having to remember to. Unquoted tokens can't contain whitespace by
+ * mmCIF rules, so trim is a no-op for them. */
 export function tokenizeMmcifRow(line: string): string[] {
     const out: string[] = [];
     let i = 0;
@@ -84,7 +92,7 @@ export function tokenizeMmcifRow(line: string): string[] {
             i++;
             const start = i;
             while (i < line.length && line[i] !== c) i++;
-            out.push(line.substring(start, i));
+            out.push(line.substring(start, i).trim());
             i++;
         } else {
             const start = i;
