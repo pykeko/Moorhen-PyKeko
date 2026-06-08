@@ -11,6 +11,7 @@ import { MoorhenAddTerminalResidueButton } from "./MoorhenAddTerminalResidueButt
 import { MoorhenAutofitRotamerButton } from "./MoorhenAutofitRotamerButton";
 import { MoorhenFlipPeptideButton } from "./MoorhenFlipPeptideButton";
 import { MoorhenEditPhiPsiButton } from "./MoorhenEditPhiPsiButton";
+import { MoorhenCovalentLinkButton } from "./MoorhenCovalentLinkButton";
 import { MoorhenConvertCisTransButton } from "./MoorhenConvertCisTransButton";
 import { MoorhenSideChain180Button } from "./MoorhenSideChain180Button";
 import { MoorhenRefineResiduesButton } from "./MoorhenRefineResiduesButton";
@@ -164,6 +165,7 @@ export const MoorhenContextMenu = (props: {
                                                 <MoorhenAutofitRotamerButton {...collectedProps} />
                                                 <MoorhenFlipPeptideButton {...collectedProps} />
                                                 <MoorhenEditPhiPsiButton {...collectedProps} />
+                                                <MoorhenCovalentLinkButton {...collectedProps} />
                                                 <MoorhenSideChain180Button {...collectedProps} />
                                                 <MoorhenRefineResiduesButton {...collectedProps} />
                                                 <MoorhenDeleteButton {...collectedProps} />
