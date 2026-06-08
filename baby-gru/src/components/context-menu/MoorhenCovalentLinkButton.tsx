@@ -21,7 +21,6 @@ import {
     parseCid,
     findAtomInModel,
     appendStructConnLoop,
-    findNearestLigandAtom,
 } from "../../utils/MoorhenCovalentLinkSurgery";
 
 interface LinkRegistryItem {
@@ -42,6 +41,7 @@ const LinkPanel = (props: {
     const [cbCid, setCbCid] = useState("");
     const [linkId, setLinkId] = useState("");
     const [registry, setRegistry] = useState<LinkRegistryItem[]>([]);
+    const [picking, setPicking] = useState(false);
     const [busy, setBusy] = useState(false);
     const [status, setStatus] = useState("");
     const [statusKind, setStatusKind] = useState<"info" | "error" | "success">("info");
@@ -69,31 +69,30 @@ const LinkPanel = (props: {
         })();
     }, [urlPrefix]);
 
-    // Auto-detect the nearest non-protein atom within 2.5 Å of the clicked SG.
-    // Pre-fills the ligand CID field so the user just hits Submit in the common case.
+    // Click-to-pick: listen for one atomClicked event when the user hits the
+    // "Pick ligand atom" button. Same pattern used by MoorhenCreateAcedrgLinkModal
+    // and MoorhenVectorsModal — the canvas (mgWebGL) dispatches "atomClicked" on
+    // document with detail.label = the atom CID.
     useEffect(() => {
-        (async () => {
-            try {
-                const sg = parseCid(sgCid);
-                if (!sg) return;
-                const modelResp: any = await commandCentre.current.cootCommand({
-                    returnType: "string",
-                    command: "molecule_to_mmCIF_string_with_gemmi",
-                    commandArgs: [molecule.molNo],
-                } as any, false);
-                const modelMmcif: string = modelResp?.data?.result?.result || "";
-                if (!modelMmcif) return;
-                const nearest = findNearestLigandAtom(modelMmcif, sg, 2.5);
-                if (nearest) {
-                    setCbCid(nearest.cid);
-                    setStatus(`Auto-detected ${nearest.compId} ${nearest.atom} at ${nearest.distance.toFixed(2)} Å — adjust if wrong`);
-                    setStatusKind("info");
-                }
-            } catch {
-                // silent — user can still type the CID
-            }
-        })();
-    }, [sgCid, molecule.molNo, commandCentre]);
+        if (!picking) return;
+        const onAtomClicked = (evt: any) => {
+            const pickedCid = evt?.detail?.label as string | undefined;
+            if (!pickedCid) { setPicking(false); return; }
+            // Normalize: detail.label can be the full /molNo/chain/res/atom form;
+            // we want the short //chain/resno/atom form for parseCid + struct_conn.
+            // Format from canvas: "/{molNo}/{chain}/{res_no}/{atom}".
+            const m = /^\/\d+\/([^/]+)\/(-?\d+)(?:\([^)]*\))?\/(.+?)(?:\/?:.*)?$/.exec(pickedCid.trim());
+            const short = m ? `//${m[1]}/${m[2]}/${m[3].trim()}` : pickedCid;
+            setCbCid(short);
+            setStatus(`Picked: ${short}`);
+            setStatusKind("info");
+            setPicking(false);
+        };
+        document.addEventListener("atomClicked", onAtomClicked, { once: true });
+        return () => {
+            document.removeEventListener("atomClicked", onAtomClicked);
+        };
+    }, [picking]);
 
     const submit = useCallback(async () => {
         if (!cbCid.trim() || !linkId) return;
@@ -204,14 +203,28 @@ const LinkPanel = (props: {
                 <code style={{ fontSize: "0.95rem", color: "#212529" }}>{sgCid}</code>
             </div>
             <div style={{ marginBottom: 10 }}>
-                <label style={{ display: "block", fontSize: "0.85rem", color: "#495057" }}>Ligand atom CID</label>
-                <input
-                    style={{ width: "100%", padding: "6px 8px", fontSize: "0.95rem", fontFamily: "monospace" }}
-                    value={cbCid}
-                    onChange={(e) => setCbCid(e.target.value)}
-                    placeholder="//A/801/C19"
-                    disabled={busy}
-                />
+                <label style={{ display: "block", fontSize: "0.85rem", color: "#495057" }}>Ligand atom</label>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <button
+                        onClick={() => { setPicking(true); setStatus("Click any atom in the 3D viewer…"); setStatusKind("info"); }}
+                        disabled={busy || picking}
+                        style={{
+                            padding: "6px 12px", fontSize: "0.9rem",
+                            background: picking ? "#fff3bf" : "#e7f5ff",
+                            color: "#1971c2", border: "1px solid #4dabf7", borderRadius: 6,
+                            cursor: busy ? "not-allowed" : "pointer", whiteSpace: "nowrap",
+                        }}
+                    >
+                        {picking ? "Click an atom…" : "Pick in viewer"}
+                    </button>
+                    <input
+                        style={{ flex: 1, padding: "6px 8px", fontSize: "0.95rem", fontFamily: "monospace" }}
+                        value={cbCid}
+                        onChange={(e) => setCbCid(e.target.value)}
+                        placeholder="//A/801/C19  (or type)"
+                        disabled={busy || picking}
+                    />
+                </div>
             </div>
             <div style={{ marginBottom: 12 }}>
                 <label style={{ display: "block", fontSize: "0.85rem", color: "#495057" }}>Link template</label>

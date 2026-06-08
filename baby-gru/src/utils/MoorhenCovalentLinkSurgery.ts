@@ -169,18 +169,39 @@ export interface NearbyAtom {
 }
 
 /**
- * Find the closest non-protein, non-water atom to a given atom (typically Cys SG).
- * Used by the covalent-link UI to pre-fill the ligand-atom CID field — saves the
- * user from typing it.
- *
- * Uses the mmCIF atom_site loop's Cartn_x/y/z coords for distance. Single-pass.
- * Returns null if no candidate is found within maxDist Å.
+ * Return all non-protein, non-water atoms within maxDist Å of the given anchor
+ * atom (typically a Cys SG), sorted by distance ascending. The UI lets the user
+ * pick from this list — auto-picking can be wrong when several ligand atoms
+ * are near the Cys.
+ */
+export function findNearbyLigandAtoms(
+    mmcif: string,
+    anchor: CidParts,
+    maxDist: number = 5.0,
+): NearbyAtom[] {
+    const nearest = findNearestLigandAtomsImpl(mmcif, anchor, maxDist);
+    return nearest;
+}
+
+/**
+ * Convenience for callers that just want the single closest candidate.
+ * Used by the auto-detect quick-pick path. Returns null if nothing within
+ * maxDist Å.
  */
 export function findNearestLigandAtom(
     mmcif: string,
     sgCid: CidParts,
     maxDist: number = 2.5,
 ): NearbyAtom | null {
+    const all = findNearestLigandAtomsImpl(mmcif, sgCid, maxDist);
+    return all.length > 0 ? all[0] : null;
+}
+
+function findNearestLigandAtomsImpl(
+    mmcif: string,
+    sgCid: CidParts,
+    maxDist: number,
+): NearbyAtom[] {
     const re = /loop_\s*\n((?:\s*_atom_site\.[A-Za-z0-9_]+\s*\n)+)/g;
     let match: RegExpExecArray | null;
     let bestSg: { x: number; y: number; z: number } | null = null;
@@ -232,16 +253,21 @@ export function findNearestLigandAtom(
         }
     }
 
-    if (!bestSg) return null;
+    if (!bestSg) return [];
 
-    let closest: NearbyAtom | null = null;
+    const within: NearbyAtom[] = [];
     for (const c of candidates) {
+        // Skip hydrogen atoms — never the covalent partner, just visual noise.
+        // Standard atom-name conventions: starts with H or single-digit-H.
+        const n = c.atom;
+        if (n.startsWith("H") || /^\d*H/.test(n)) continue;
         const co = (c as any)._coord as { x: number; y: number; z: number };
         const dx = co.x - bestSg.x, dy = co.y - bestSg.y, dz = co.z - bestSg.z;
         const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (d <= maxDist && (closest === null || d < closest.distance)) {
-            closest = { cid: c.cid, compId: c.compId, atom: c.atom, distance: d };
+        if (d <= maxDist) {
+            within.push({ cid: c.cid, compId: c.compId, atom: c.atom, distance: d });
         }
     }
-    return closest;
+    within.sort((a, b) => a.distance - b.distance);
+    return within;
 }
