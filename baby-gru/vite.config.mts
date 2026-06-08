@@ -4,6 +4,12 @@ import path from "path";
 import { defineConfig } from "vite";
 import checker from "vite-plugin-checker";
 import crossOriginIsolation from "vite-plugin-cross-origin-isolation";
+// VitePWA disabled in PyKeko v0.2.23+ via the `false ? [VitePWA(...)] : []`
+// short-circuit below — the autoUpdate workbox SW persisted across reinstalls
+// and served stale bundles on first launch after every upgrade, making each
+// release look "broken" until reload. See src/index.tsx for the runtime
+// cleanup of pre-existing SW registrations from older installs. The import
+// stays for an easy re-enable path.
 import { VitePWA } from "vite-plugin-pwa";
 import svgr from "vite-plugin-svgr";
 import topLevelAwait from "vite-plugin-top-level-await";
@@ -57,7 +63,11 @@ export default defineConfig({
                 tsconfigPath: "tsconfig.json",
             },
         }),
-        VitePWA({
+        // VitePWA call retained for upstream-merge friendliness but disabled
+        // in PyKeko via the false && short-circuit below — the plugin call is
+        // never evaluated. Replace with a real conditional (e.g. an env flag)
+        // if browser PWA support becomes desirable again.
+        ...(false ? [VitePWA({
             registerType: "autoUpdate",
             workbox: {
                 maximumFileSizeToCacheInBytes: 30 * 1024 * 1024,
@@ -138,7 +148,7 @@ export default defineConfig({
                     },
                 ],
             },
-        }),
+        })] : []),
         {
             name: "configure-response-headers",
             configureServer: server => {

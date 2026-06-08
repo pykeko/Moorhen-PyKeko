@@ -192,6 +192,12 @@ export function createControlApi(ctx: Ctx) {
           continue;
         }
         try {
+          // Match the native handleSessionUpload path (MoorhenFileLoading.ts loadSession):
+          // reset the cootCommand history BEFORE the restore. Without this, in-flight
+          // command IDs from the new molecule's drawing pipeline can race against the
+          // teardown of the prior scene and surface as ".map of undefined" inside
+          // loadSessionData. Drag-drop got this for free; the CLI path needs it explicit.
+          try { commandCentre.current.history.reset(); } catch (e) {}
           const msg = moorhensession.Session.decode(f.bytes as any, undefined, undefined);
           const status = await MoorhenTimeCapsule.loadSessionFromProtoMessage(
             msg,
@@ -205,7 +211,7 @@ export function createControlApi(ctx: Ctx) {
           );
           results.push({ file: f.name, type: "session", status });
         } catch (e: any) {
-          results.push({ file: f.name, type: "error", error: `session restore failed: ${e?.message || e}` });
+          results.push({ file: f.name, type: "error", error: `session restore failed: ${e?.message || e}`, stack: String(e?.stack || "") });
         }
       }
 

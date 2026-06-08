@@ -13,7 +13,8 @@
 // writers also strip connection metadata, so the link survives only in the
 // downloaded file. The user feeds that file to refmacat externally.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Draggable from "react-draggable";
 import { useCommandCentre } from "../../InstanceManager";
 import { moorhen } from "../../types/moorhen";
 import { MoorhenContextButtonBase, ContextButtonProps } from "./MoorhenContextButtonBase";
@@ -222,12 +223,22 @@ const LinkPanel = (props: {
 
     const statusColor = statusKind === "error" ? "#e03131" : statusKind === "success" ? "#2f9e44" : "#495057";
 
+    // The overlay container fixes us to wherever the right-click happened, which
+    // often sits right over the atoms the user is trying to pick. Wrap in a
+    // Draggable so the header acts as a drag handle and the user can move the
+    // panel out of the way without dismissing it.
+    const dragNodeRef = useRef<HTMLDivElement>(null);
+
     return (
-        <div style={{
+        <Draggable handle=".pykeko-covlink-header" nodeRef={dragNodeRef}>
+        <div ref={dragNodeRef} style={{
             padding: 16, background: "white", border: "1px solid #ccc",
             borderRadius: 8, minWidth: 420, maxWidth: 520, boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
         }}>
-            <h6 style={{ marginTop: 0, marginBottom: 12 }}>Declare covalent link</h6>
+            <h6 className="pykeko-covlink-header" style={{ marginTop: 0, marginBottom: 12, cursor: "move", userSelect: "none" }}
+                title="Drag to reposition">
+                Declare covalent link
+            </h6>
             <div style={{ marginBottom: 10 }}>
                 <label style={{ display: "block", fontSize: "0.85rem", color: "#495057" }}>Cys SG (from right-click)</label>
                 <code style={{ fontSize: "0.95rem", color: "#212529" }}>{sgCid}</code>
@@ -296,6 +307,7 @@ const LinkPanel = (props: {
                 <div style={{ marginTop: 10, fontSize: "0.85rem", color: statusColor }}>{status}</div>
             )}
         </div>
+        </Draggable>
     );
 };
 
