@@ -41,7 +41,31 @@ cd Moorhen
 The new binding is in the WASM binary (`strings moorhen.wasm | grep
 pk_test_int_only` returns it) but doesn't register at runtime.
 
-## Root cause hypothesis: emscripten 5.0.4 `EMSCRIPTEN` macro change → ODR violation
+## Not a recent version regression: bug exists in emscripten 5.0.3 too
+
+**Tested 2026-06-08.** Installed emscripten 5.0.3 (the oldest version
+Moorhen's README claims to support), cold-built pristine
+`moorhen-coot/Moorhen` with the `pk_test_int_only` test binding.
+Result: `cootModule.pk_test_int_only === undefined` while
+`cootModule.validate === function`. **Same symptom as 5.0.7.**
+
+So the bug is not an emscripten 5.0.4-5.0.7 regression — it's older.
+It's been latent for at least 3 months (since 5.0.3 was released
+2026-03-14), and likely much longer. Moorhen upstream probably hasn't
+added a new binding in months, so the regression hasn't bitten them.
+PyKeko and any other fork that actively extends the binding surface
+will hit it.
+
+This pretty much rules out an emscripten version downgrade as a fix —
+the affected behavior is wherever it is in either:
+- A long-standing emscripten/binaryen embind interaction with Moorhen's
+  specific build configuration (LTO + -O2 + -pthread + -fwasm-exceptions
+  + static-init order across libcoot.a)
+- Something in Moorhen's build infrastructure (the cmake setup,
+  the EMSCRIPTEN_BINDINGS macro placement, linker flags) that's been
+  silently broken for some time
+
+## Refuted hypothesis #1: EMSCRIPTEN macro change → ODR violation
 
 Per the [emscripten 5.0.4 changelog (2026-03-23)](https://github.com/emscripten-core/emscripten/blob/main/ChangeLog.md):
 
@@ -111,13 +135,24 @@ Add `-DEMSCRIPTEN` to the build flags:
 ```cmake
 add_compile_definitions(EMSCRIPTEN)
 ```
-or via the existing C_DEFINES list. This restores the 5.0.3 behavior
-across all TUs. Should make the bug disappear with no source changes.
+or via the existing C_DEFINES list. This would restore the 5.0.3 behavior
+across all TUs.
 
-**Verification (in progress 2026-06-08)**: rebuilding `~/Moorhen-dev`'s
-CCP4_WASM_BUILD with `CMAKE_CXX_FLAGS+=-DEMSCRIPTEN`. If
-`pk_test_int_only` (or any of the 8 PyKeko bindings) registers after
-this rebuild, hypothesis confirmed.
+**Tested 2026-06-08: did NOT fix the bug.** Added `-DEMSCRIPTEN` to
+`CMAKE_CXX_FLAGS` via CMakeCache.txt, touched the suspect coot .cc files
+to force recompile, rebuilt `~/Moorhen-dev/CCP4_WASM_BUILD`. Verified the
+flag landed in `wasm_src/CMakeFiles/coot.dir/flags.make` and in
+`wasm_src/CMakeFiles/moorhen.dir/flags.make`. The 4 PyKeko subclass
+bindings (set_phi_psi, get_torsion, add_water_at_position,
+get_ncs_ghost_matrix) and the 4 covalent-link bindings (make/delete×
+plain/_using_cids) all still register as `undefined` while
+flipPeptide_cid and side_chain_180 still register as `function`. So
+the `validation_information_t` ODR-violation hypothesis is wrong — or
+at least, fixing that one ODR site doesn't fix the bug.
+
+The bug is deeper than the EMSCRIPTEN-macro change. Possibly there's
+another ODR violation elsewhere in coot's headers, or the regression
+is something other than the 5.0.4 macro change.
 
 ### 2. Proper fix: migrate coot to `__EMSCRIPTEN__`
 Replace every `#ifdef EMSCRIPTEN` with `#ifdef __EMSCRIPTEN__` in coot's
@@ -137,25 +172,34 @@ re-uses the same trap.
 
 ## TODOs
 
-- [ ] **Verify the -DEMSCRIPTEN fix** (in progress, build log at
-      `/tmp/emscripten-fix-build.log`). Probe via the CDP harness:
-      after the build lands, swap WASM into PyKekoDev, reload, check
-      `typeof cootModule.pk_test_int_only` and `typeof
-      molecules_container.set_phi_psi`.
+- [x] **Verify the -DEMSCRIPTEN fix** — TESTED, did NOT fix. See §1.
+- [x] **Test against emscripten 5.0.3** — TESTED, bug reproduces. Not
+      a version regression. See "Not a recent version regression" §
+      above.
 - [ ] **Fix the PyKeko fork relationship** — `hilgersmt/Moorhen-PyKeko`
       currently isn't set up as a proper GitHub fork of
       `moorhen-coot/Moorhen`. Convert it so PRs / issues / fork-aware
       tooling work normally. Until then, filing an upstream issue from
       our user identity will look like an unaffiliated bug report.
 - [ ] **File the upstream issue** at `moorhen-coot/Moorhen` (after the
-      fork relationship is fixed). Min repro is above; include the
-      ChangeLog citation + the validation_information.hh ODR example.
-      Suggest fix #2 (migrate to `__EMSCRIPTEN__`).
-- [ ] If upstream picks (2), unblock PyKeko's 4 silently-broken
-      features in the next release.
-- [ ] If `-DEMSCRIPTEN` fixes it cleanly, consider shipping that as a
-      patch in `coot-patches/` or as a tweak to `wasm_src/CMakeLists.txt`
-      (a 1-line change). That avoids waiting on upstream.
+      fork relationship is fixed). Min repro is above. Include:
+      - Both 5.0.3 and 5.0.7 reproduce (not a version regression)
+      - `-DEMSCRIPTEN` workaround doesn't fix
+      - The minimum repro is a single `function()` line addition to
+        `wasm_src/moorhen-types-wrappers.cc`
+      - Stuart's existing bindings work fine; only NEW additions fail
+- [ ] **Investigate other ODR sites or build settings** that could
+      explain the bug:
+      - Other `#ifdef EMSCRIPTEN` sites in coot beyond
+        validation-information.hh (molecules-container-maps.cc,
+        molecules-container.cc, molecules-container-ligand-fitting.cc)
+      - LTO behavior at -O2: try a -O0 build and see if registrations
+        come back
+      - Static-init order across libcoot.a → moorhen.wasm link: try
+        adding the test binding to a NEW .cc file that becomes the
+        last .o in the link list
+      - The binaryen post-processing pass (wasm-opt with -O2 settings)
+        — try `--no-wasm-opt` or equivalent
 
 ## Diagnostic process (for future-me)
 
