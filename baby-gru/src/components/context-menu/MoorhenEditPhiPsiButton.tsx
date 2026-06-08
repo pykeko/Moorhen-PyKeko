@@ -10,7 +10,7 @@ import { useCommandCentre } from "../../InstanceManager";
 import { moorhen } from "../../types/moorhen";
 import { MoorhenSlider } from "../inputs";
 import { MoorhenContextButtonBase, ContextButtonProps } from "./MoorhenContextButtonBase";
-import { getTorsionJs } from "../../utils/MoorhenEmbindWorkarounds";
+import { getTorsionJs, setPhiPsiJs } from "../../utils/MoorhenEmbindWorkarounds";
 
 // Standard χ definitions (atom quads, by residue type). ALA/GLY have none.
 const CHI_DEFS: { [key: string]: string[][] } = {
@@ -131,8 +131,11 @@ const TorsionEditorPanel = (props: {
 
     const applyBackbone = useCallback(async (newPhi: number, newPsi: number) => {
         try {
-            await commandCentre.current.cootCommand(
-                { command: "set_phi_psi", commandArgs: [molecule.molNo, cid, newPhi, newPsi], returnType: "status", changesMolecules: [molecule.molNo] }, true);
+            // JS-side workaround for the broken set_phi_psi WASM binding —
+            // see docs/embind-silent-drop-bug.md. Applies a local Rodrigues
+            // rotation to the residue's C-side atoms (phi) + carbonyl + next
+            // amide (psi), preserves neighbours, peptide bond stretches.
+            await setPhiPsiJs(commandCentre.current, molecule.molNo, cid, newPhi, newPsi);
             molecule.setAtomsDirty(true);
             await molecule.redraw();
         } catch (e) { console.warn("[EditTorsion] set_phi_psi failed", e); }

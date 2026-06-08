@@ -188,9 +188,10 @@ the `EMSCRIPTEN` macro (no longer command-line-defined; coot's headers still
 use the old form without `<emscripten.h>` include).
 
 Full write-up, repro, and fix options: [`docs/embind-silent-drop-bug.md`](docs/embind-silent-drop-bug.md).
-JS-side workarounds shipped: covalent links (77c8d490), `get_torsion`
-+ `add_water_at_position` (this commit). `set_phi_psi` and
-`get_ncs_ghost_matrix` remain silently broken until upstream fix.
+JS-side workarounds now cover all five affected user-facing call sites:
+covalent links, `get_torsion`, `add_water_at_position`, `set_phi_psi`,
+`get_ncs_ghost_matrix`. See [`baby-gru/src/utils/MoorhenEmbindWorkarounds.ts`](baby-gru/src/utils/MoorhenEmbindWorkarounds.ts)
+and [`baby-gru/src/utils/MoorhenCovalentLinkSurgery.ts`](baby-gru/src/utils/MoorhenCovalentLinkSurgery.ts).
 
 ---
 

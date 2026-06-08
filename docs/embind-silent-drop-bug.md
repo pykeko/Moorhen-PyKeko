@@ -136,21 +136,32 @@ Pieces of this approach shipped 2026-06-07/08:
 | `make_covalent_link_using_cids` | `appendStructConnLoop` (struct_conn surgery, returns augmented mmCIF for refmac) | `baby-gru/src/utils/MoorhenCovalentLinkSurgery.ts` |
 | `get_torsion` | `getTorsionFromMmcif` / `getTorsionJs` (parse 4 atom coords + cross-product dihedral) | `baby-gru/src/utils/MoorhenEmbindWorkarounds.ts` |
 | `add_water_at_position` | `addWaterAtPositionJs` (append HETATM HOH row, auto-increments seqNum in solvent chain, falls back to chain "X" if no solvent chain exists) | `baby-gru/src/utils/MoorhenEmbindWorkarounds.ts` |
+| `set_phi_psi` | `setPhiPsiJs` (Rodrigues rotation of residue i's C-side atoms about N→CA for φ; carbonyl O + residue i+1 amide N about CA→C for ψ. Peptide bond stretches; refine after.) | `baby-gru/src/utils/MoorhenEmbindWorkarounds.ts` |
+| `get_ncs_ghost_matrix` | `getNcsGhostMatrixJs` (Kabsch superposition via Horn's quaternion method on Cα atoms paired by residue number) | `baby-gru/src/utils/MoorhenEmbindWorkarounds.ts` |
 
-Verified end-to-end on 8FD9 in PyKekoDev:
+Verified end-to-end on 8FD9 (and 2HHB for NCS) in PyKekoDev:
 - `get_torsion`: CYS A:481 χ1 (N-CA-CB-SG) = 62.4° (realistic)
 - `add_water_at_position`: three sequential adds produced `/1/X/1`,
   `/1/X/2`, `/1/X/3`; atom count grew 4757 → 4760
+- `set_phi_psi`: GLU A:500 phi=61.85° psi=38.13° → target (-60,-45) →
+  achieved phi=-60.02° psi=-44.97°
+- `get_ncs_ghost_matrix`: self-superposition A→A = identity matrix;
+  2HHB cross-superposition A→C = proper orthogonal rotation
+  (det R=1.0) with translation (16.92, 4.18, 81.48) Å
 
-**Still TODO** (medium-cost workarounds, not yet written):
-- `set_phi_psi`: needs Rodrigues rotation matrix applied to specific
-  atom sets in the model mmCIF (~3-4 hours)
-- `get_ncs_ghost_matrix`: needs JS Kabsch/SVD superposition, or wrap
-  an existing working coot `lsq_*` binding if one exists (~2-8 hours
-  depending on which path)
-- All four `make_covalent_link*` / `delete_covalent_link*` family —
-  the `make_covalent_link_using_cids` path is covered by the
-  struct_conn surgery; the others have no current caller.
+**Sign-convention note on `set_phi_psi`**: rotating residue i's C-side
+atoms by +θ about the (CA − N) axis empirically *decreases* the
+dihedral by θ (verified by hand on 8FD9 GLU 500). The JS workaround
+therefore rotates by `current − target` rather than `target − current`.
+The C++ patch file at `coot-patches/molecules-container-set-phi-psi.cc`
+uses the opposite sign convention. If the WASM binding ever gets
+fixed, you may need to flip the sign before deleting the workaround.
+
+All four broken bindings now have working JS replacements. The
+covalent-link family (`make_covalent_link_using_cids` etc.) is also
+handled at the application layer via the struct_conn surgery; no
+direct binding-replacement was written for the atom_spec_t variants
+since no JS caller uses them.
 
 ### 1. Quick fix: force-define EMSCRIPTEN in CMakeLists.txt
 Add `-DEMSCRIPTEN` to the build flags:

@@ -15,7 +15,7 @@ import { webGL } from "../types/mgWebGL";
 import { moorhen } from "../types/moorhen";
 import { privateer } from "../types/privateer";
 import { ColourRule } from "./MoorhenColourRule";
-import { addWaterAtPositionJs } from "./MoorhenEmbindWorkarounds";
+import { addWaterAtPositionJs, getNcsGhostMatrixJs } from "./MoorhenEmbindWorkarounds";
 import { MoleculeRepresentation, gaussianSurfSettings, m2tParameters, residueEnvironmentOptions } from "./MoorhenMoleculeRepresentation";
 import {
     centreOnGemmiAtoms,
@@ -2641,16 +2641,11 @@ export class MoorhenMolecule {
      * @returns Array of 16 numbers (4x4 row-major) or null on failure
      */
     async getNcsGhostMatrix(masterChain: string, copyChain: string): Promise<number[] | null> {
-        const result = (await this.commandCentre.current.cootCommand(
-            {
-                returnType: "status",
-                command: "get_ncs_ghost_matrix",
-                commandArgs: [this.molNo, masterChain, copyChain],
-            },
-            false
-        )) as moorhen.WorkerResponse<string>;
-        const str = result.data.result.result;
-        if (!str || typeof str !== "string") return null;
+        // JS-side workaround for the broken get_ncs_ghost_matrix WASM binding —
+        // see docs/embind-silent-drop-bug.md. Uses Kabsch superposition via Horn's
+        // quaternion method against Cα atoms paired by residue number.
+        const str = await getNcsGhostMatrixJs(this.commandCentre.current, this.molNo, masterChain, copyChain);
+        if (!str) return null;
         const arr = str.trim().split(/\s+/).map(Number);
         if (arr.length !== 16 || arr.some(isNaN)) return null;
         return arr;
