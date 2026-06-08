@@ -243,12 +243,12 @@ or a similar JS-side array overflows past a 256/512/1024 entry.
 - [ ] **Fix the PyKeko fork relationship** — `hilgersmt/Moorhen-PyKeko`
       currently isn't a proper GitHub fork of `moorhen-coot/Moorhen`.
       Convert it before filing the upstream issue.
-- [ ] **File the upstream issue** at `moorhen-coot/Moorhen`. Min repro:
-      single `function("pk_test_int_only", +[](int a, int b) { return
-      a + b; });` in `wasm_src/moorhen-types-wrappers.cc`, cold build,
-      observe `cootModule.pk_test_int_only === undefined` while
-      `cootModule.validate === function`. Include the refuted-hypothesis
-      table above so upstream knows what's already been tried.
+- [ ] **File the upstream issue** at `moorhen-coot/Moorhen`. Issue body
+      ready to paste at
+      [`embind-silent-drop-upstream-issue.md`](embind-silent-drop-upstream-issue.md).
+      `gh issue create --repo moorhen-coot/Moorhen --title "embind:
+      newly-added function bindings silently fail to register"
+      --body-file docs/embind-silent-drop-upstream-issue.md` when ready.
 
 ## Diagnostic process (for future-me)
 
