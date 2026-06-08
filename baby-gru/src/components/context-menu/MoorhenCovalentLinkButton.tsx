@@ -21,6 +21,7 @@ import {
     parseCid,
     findAtomInModel,
     appendStructConnLoop,
+    findNearestLigandAtom,
 } from "../../utils/MoorhenCovalentLinkSurgery";
 
 interface LinkRegistryItem {
@@ -67,6 +68,32 @@ const LinkPanel = (props: {
             }
         })();
     }, [urlPrefix]);
+
+    // Auto-detect the nearest non-protein atom within 2.5 Å of the clicked SG.
+    // Pre-fills the ligand CID field so the user just hits Submit in the common case.
+    useEffect(() => {
+        (async () => {
+            try {
+                const sg = parseCid(sgCid);
+                if (!sg) return;
+                const modelResp: any = await commandCentre.current.cootCommand({
+                    returnType: "string",
+                    command: "molecule_to_mmCIF_string_with_gemmi",
+                    commandArgs: [molecule.molNo],
+                } as any, false);
+                const modelMmcif: string = modelResp?.data?.result?.result || "";
+                if (!modelMmcif) return;
+                const nearest = findNearestLigandAtom(modelMmcif, sg, 2.5);
+                if (nearest) {
+                    setCbCid(nearest.cid);
+                    setStatus(`Auto-detected ${nearest.compId} ${nearest.atom} at ${nearest.distance.toFixed(2)} Å — adjust if wrong`);
+                    setStatusKind("info");
+                }
+            } catch {
+                // silent — user can still type the CID
+            }
+        })();
+    }, [sgCid, molecule.molNo, commandCentre]);
 
     const submit = useCallback(async () => {
         if (!cbCid.trim() || !linkId) return;

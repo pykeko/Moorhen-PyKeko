@@ -153,3 +153,95 @@ function quoteIfNeeded(v: string): string {
     if (/[\s'"]/.test(v)) return `'${v.replace(/'/g, "''")}'`;
     return v;
 }
+
+const STANDARD_AA = new Set([
+    "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS",
+    "ILE", "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP",
+    "TYR", "VAL", "MSE", "SEC", "PYL",
+]);
+const NON_LIGAND = new Set(["HOH", "WAT", "DOD", "H2O"]);
+
+export interface NearbyAtom {
+    cid: string;       // //CHAIN/RESNO/ATOM
+    compId: string;    // residue 3-letter code
+    atom: string;      // atom name
+    distance: number;  // Å
+}
+
+/**
+ * Find the closest non-protein, non-water atom to a given atom (typically Cys SG).
+ * Used by the covalent-link UI to pre-fill the ligand-atom CID field — saves the
+ * user from typing it.
+ *
+ * Uses the mmCIF atom_site loop's Cartn_x/y/z coords for distance. Single-pass.
+ * Returns null if no candidate is found within maxDist Å.
+ */
+export function findNearestLigandAtom(
+    mmcif: string,
+    sgCid: CidParts,
+    maxDist: number = 2.5,
+): NearbyAtom | null {
+    const re = /loop_\s*\n((?:\s*_atom_site\.[A-Za-z0-9_]+\s*\n)+)/g;
+    let match: RegExpExecArray | null;
+    let bestSg: { x: number; y: number; z: number } | null = null;
+    const candidates: NearbyAtom[] = [];
+
+    while ((match = re.exec(mmcif)) !== null) {
+        const tagsBlock = match[1];
+        const tags = tagsBlock.split(/\s+/).filter(t => t.startsWith("_atom_site."));
+        const idx = (col: string) => tags.indexOf(`_atom_site.${col}`);
+        const idxChain = idx("auth_asym_id"), idxSeq = idx("auth_seq_id"),
+              idxAtom = idx("label_atom_id"), idxComp = idx("label_comp_id"),
+              idxX = idx("Cartn_x"), idxY = idx("Cartn_y"), idxZ = idx("Cartn_z"),
+              idxGroup = idx("group_PDB");
+        if (idxChain < 0 || idxSeq < 0 || idxAtom < 0 || idxComp < 0 ||
+            idxX < 0 || idxY < 0 || idxZ < 0) continue;
+
+        const rest = mmcif.substring(match.index + match[0].length);
+        const lines = rest.split("\n");
+        for (const rawLine of lines) {
+            const line = rawLine.trim();
+            if (!line || line.startsWith("#")) continue;
+            if (line.startsWith("_") || line.startsWith("loop_") || line.startsWith("data_")) break;
+            const cols = tokenizeMmcifRow(line);
+            if (cols.length < tags.length) continue;
+            const chain = cols[idxChain];
+            const seq = parseInt(cols[idxSeq], 10);
+            const atom = cols[idxAtom];
+            const comp = cols[idxComp];
+            const x = parseFloat(cols[idxX]);
+            const y = parseFloat(cols[idxY]);
+            const z = parseFloat(cols[idxZ]);
+            if (Number.isNaN(x) || Number.isNaN(y) || Number.isNaN(z)) continue;
+
+            if (chain === sgCid.chain && seq === sgCid.resNo && atom === sgCid.atom) {
+                bestSg = { x, y, z };
+                continue;
+            }
+            // Only consider non-protein, non-water HETATM or unusual residues
+            if (STANDARD_AA.has(comp)) continue;
+            if (NON_LIGAND.has(comp)) continue;
+            candidates.push({
+                cid: `//${chain}/${seq}/${atom}`,
+                compId: comp,
+                atom,
+                distance: -1, // fill in after we know bestSg
+            });
+            // Store coords in the candidate (re-using cid field is bad — use a side slot)
+            (candidates[candidates.length - 1] as any)._coord = { x, y, z };
+        }
+    }
+
+    if (!bestSg) return null;
+
+    let closest: NearbyAtom | null = null;
+    for (const c of candidates) {
+        const co = (c as any)._coord as { x: number; y: number; z: number };
+        const dx = co.x - bestSg.x, dy = co.y - bestSg.y, dz = co.z - bestSg.z;
+        const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (d <= maxDist && (closest === null || d < closest.distance)) {
+            closest = { cid: c.cid, compId: c.compId, atom: c.atom, distance: d };
+        }
+    }
+    return closest;
+}
