@@ -544,9 +544,31 @@ export const SMILESToLigand = () => {
 
         if (result) {
             return result;
-        } else {
-            console.log("Error creating molecule... Wrong SMILES?");
         }
+
+        // PyKeko: smiles_to_pdb's RDKit-WASM path fails on some exotic
+        // chemistries (boron centres, certain charged species, weird
+        // tautomers). Falls back to a local AceDRG install via IPC when
+        // available. Browser builds skip this — window.__moorhenControl
+        // is undefined outside the Electron wrapper.
+        const ctl = (window as any).__moorhenControl;
+        if (ctl && typeof ctl.acedrgSmiles === "function") {
+            try {
+                const r = await ctl.acedrgSmiles(smilesText, tlc);
+                if (r?.ok && r.cif) {
+                    console.log(`AceDRG fallback succeeded for ${tlc} (${r.cif.length} bytes)`);
+                    return r.cif;
+                }
+                if (r?.notInstalled) {
+                    console.warn("AceDRG fallback unavailable: " + r.error);
+                } else {
+                    console.warn("AceDRG fallback failed: " + (r?.error || "unknown"));
+                }
+            } catch (err) {
+                console.warn("AceDRG fallback threw:", err);
+            }
+        }
+        console.log("Error creating molecule... Wrong SMILES?");
     };
 
     const handleSourceChange = async evt => {
