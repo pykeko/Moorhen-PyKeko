@@ -1,0 +1,145 @@
+# CYS-ACR — Cys-S to acrylamide post-Michael adduct (saturated β-thioether)
+#
+# Hand-authored link CIF for PyKeko covalent-ligand workflow.
+# Family F1 of the plan-doc taxonomy: covers ibrutinib, osimertinib (T790M),
+# zanubrutinib (acrylamide form), and any other α,β-unsaturated amide warhead
+# that adds Cys-S across C=C → saturated β-thioether after Michael addition.
+# Sibling to CYS-YNA.cif (F2 ynamide → vinyl thioether).
+#
+# Key chemistry difference vs F2:
+#   F2 (ynamide):     Cα≡Cβ → Cα=Cβ (triple→double). sp2 product. Has plane.
+#   F1 (acrylamide):  Cα=Cβ → Cα-Cβ (double→single). sp3 product. No plane.
+#
+# The link constrains atoms ONLY up to Cβ. Anything past Cβ is governed by the
+# ligand's own monomer dictionary — this single template handles the whole
+# acrylamide family regardless of substituents on Cβ.
+#
+# PLACEHOLDER TOKENS substituted at runtime by the PyKeko Track B detector:
+#   <LIG> ← ligand 3-letter (or 5-char) CCD code
+#   <CB>  ← Cβ atom-id in the user's ligand (the carbon bonded to SG post-Michael)
+#   <CA>  ← Cα atom-id (the carbon between Cβ and the carbonyl)
+#   <CG>  ← substituent on Cβ opposite Cα (H for terminal acrylamide, R for
+#            substituted variants like dimethylaminocrotonamide)
+#   <CO>  ← carbonyl-C atom-id
+#   <N>   ← amide-N atom-id
+#   <O>   ← carbonyl-O atom-id
+#   <HCB> ← H to delete on Cβ (post-product input only)
+#
+# Geometry provenance:
+#   * S-C(sp3): CSD aggregate for Cys-S-Csp3 = 1.81 ± 0.02 Å (matches common
+#     thioether values; this is longer than the F2 sp2 case at 1.78 because
+#     the sp3 carbon has more s-character in its hybrid).
+#   * CB-S-Cβ (Cys side): same 100-104° range as F2 — both are sp3 sulfur to
+#     carbon, the carbon's hybridisation doesn't significantly change the S
+#     angle. Default 100.0° following AceDRG convention.
+#   * S-Cβ-Cα (ligand side): 113° — tetrahedral with thioether expansion
+#     (vs ideal 109.5°, S being a soft, polarizable substituent widens the
+#     angle slightly). σ=2.0 keeps it flexible enough for ring constraints.
+#   * No planarity restraint — sp3/sp3 system has full rotational freedom
+#     around all the new bonds.
+#
+# References:
+#   ~/Moorhen/docs/refs/nicholls-modelling-2021.pdf — CCP4-ML link-CIF format
+#   ~/Moorhen/docs/covalent-ligand-plan.md §2.1 (warhead family taxonomy)
+#   PDB 5P9I, 5P9J — ibrutinib + BTK (validation targets)
+
+data_link_CYS-ACR
+_chem_link.id                CYS-ACR
+_chem_link.name              "Cys-S to acrylamide post-Michael adduct (sat. beta-thioether)"
+_chem_link.comp_id_1         CYS
+_chem_link.mod_id_1          CYS-ACR-mod1
+_chem_link.group_comp_1      L-peptide
+_chem_link.comp_id_2         <LIG>
+_chem_link.mod_id_2          CYS-ACR-mod2
+_chem_link.group_comp_2      non-polymer
+
+# ---- bonds: new S-Cβ single bond (sp3 S to sp3 C) ----
+# NOTE: NO Cα-Cβ bond here — that bond stays in the ligand's own chem_comp
+# (single after mod2 applies, or already single if the user uploaded the
+# saturated post-product form).
+loop_
+_chem_link_bond.atom_1_comp_id
+_chem_link_bond.atom_id_1
+_chem_link_bond.atom_2_comp_id
+_chem_link_bond.atom_id_2
+_chem_link_bond.type
+_chem_link_bond.value_dist
+_chem_link_bond.value_dist_esd
+ 1 SG    2 <CB>   single 1.81 0.02
+
+# ---- angles around the new sp3 thioether linkage ----
+# Cys side (CB-SG-Cβ): same range as F2 (sp3 S). σ=3.0 since the Cys
+# sidechain has rotameric freedom around χ1/χ2.
+# Ligand side (SG-Cβ-Cα, SG-Cβ-Cγ): tetrahedral expansion at the soft thioether.
+loop_
+_chem_link_angle.atom_1_comp_id
+_chem_link_angle.atom_id_1
+_chem_link_angle.atom_2_comp_id
+_chem_link_angle.atom_id_2
+_chem_link_angle.atom_3_comp_id
+_chem_link_angle.atom_id_3
+_chem_link_angle.value_angle
+_chem_link_angle.value_angle_esd
+ 1 CB    1 SG    2 <CB>   100.0   3.0
+ 1 SG    2 <CB>  2 <CA>   113.0   2.0
+ 1 SG    2 <CB>  2 <CG>   113.0   2.0
+
+# ---- soft torsions ----
+# Two single-bond hinges — no rigid plane to lock against. Period=3 with σ=20°
+# lets refinement choose the energetically-favoured staggered conformation
+# without locking either side.
+loop_
+_chem_link_tor.id
+_chem_link_tor.atom_1_comp_id
+_chem_link_tor.atom_id_1
+_chem_link_tor.atom_2_comp_id
+_chem_link_tor.atom_id_2
+_chem_link_tor.atom_3_comp_id
+_chem_link_tor.atom_id_3
+_chem_link_tor.atom_4_comp_id
+_chem_link_tor.atom_id_4
+_chem_link_tor.value_angle
+_chem_link_tor.value_angle_esd
+_chem_link_tor.period
+ sp3_sp3_cys_hinge     1 CA    1 CB    1 SG    2 <CB>   180.0  20.0  3
+ sp3_sp3_thioether     1 SG    2 <CB>  2 <CA>  2 <CO>   180.0  20.0  3
+
+
+# =====================================================================
+# Cys-side modification: delete HG (the thiol H) — identical to CYS-YNA-mod1
+# =====================================================================
+data_mod_CYS-ACR-mod1
+loop_
+_chem_mod_atom.mod_id
+_chem_mod_atom.function
+_chem_mod_atom.atom_id
+_chem_mod_atom.new_atom_id
+_chem_mod_atom.new_type_symbol
+_chem_mod_atom.new_type_energy
+_chem_mod_atom.new_partial_charge
+ CYS-ACR-mod1 delete HG . . . .
+
+
+# =====================================================================
+# Ligand-side modification — POST-PRODUCT SATURATED INPUT BRANCH.
+#
+# Assumes the ligand chem_comp was deposited with the saturated thioether
+# form already drawn (e.g. ibrutinib bound to BTK as in 5P9I). Just delete
+# the spare H on Cβ that's being replaced by the new SG bond.
+#
+# If the runtime detector instead matched the alkene-pre form (free drug
+# SMILES, R-CH=CH-C(=O)-N), use CYS-ACR-mod2-alkene.cif which:
+#   (1) changes Cα=Cβ from double to single,
+#   (2) adds a new H on Cα,
+#   (3) retypes Cα and Cβ from sp2 to sp3.
+# =====================================================================
+data_mod_CYS-ACR-mod2
+loop_
+_chem_mod_atom.mod_id
+_chem_mod_atom.function
+_chem_mod_atom.atom_id
+_chem_mod_atom.new_atom_id
+_chem_mod_atom.new_type_symbol
+_chem_mod_atom.new_type_energy
+_chem_mod_atom.new_partial_charge
+ CYS-ACR-mod2 delete <HCB> . . . .

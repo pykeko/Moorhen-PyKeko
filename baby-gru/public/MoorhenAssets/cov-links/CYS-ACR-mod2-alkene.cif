@@ -1,0 +1,65 @@
+# CYS-ACR-mod2-alkene — alternative mod2 for the acrylamide pre-Michael input case
+#
+# When the user uploaded a ligand with the C=C still drawn (the free drug
+# SMILES form, e.g. ibrutinib's CH2=CHC(=O)N-pyrazolopyrimidine or
+# osimertinib's N-methylacrylamide), this mod2 block REPLACES the default
+# `data_mod_CYS-ACR-mod2` in CYS-ACR.cif. It encodes the Michael-addition
+# chemistry that the bond declaration triggers:
+#
+#   (1) Change Cα=Cβ from double to single bond
+#   (2) Add H on Cα (Michael addition transfers one proton to the alpha carbon
+#       from solvent/active-site water)
+#   (3) Retype Cα and Cβ from sp2 (CR1) to sp3 (CT)
+#   (4) The new SG–Cβ bond is added via the link's bond block (not here)
+#
+# Selected at runtime when the SMARTS detector matched either:
+#   CYS-ACR-pre          (internal acrylamide, R-CH=CH-C(=O)-N)
+#   CYS-ACR-pre-terminal (terminal acrylamide, CH2=CH-C(=O)-N, Ibrutinib-class)
+#
+# For the terminal-acrylamide case (R = H on Cβ, no Cγ substituent on the
+# warhead), the JS detector additionally appends one extra _chem_link_angle
+# row to the link block to constrain the second H on Cβ:
+#   1 SG 2 <CB> 2 <HCB-new> 109.5 3.0
+# (Cβ's two H's plus SG and Cα fill its sp3 valence with standard tetrahedral
+# angles around the new thioether.)
+#
+# PLACEHOLDER TOKENS substituted at runtime (same set as CYS-ACR.cif):
+#   <CB>  ← Cβ atom-id   (e.g. C13 in osimertinib's acryl)
+#   <CA>  ← Cα atom-id
+#   <HCA> ← H to add on Cα (the Michael-addition proton; named to follow the
+#            ligand's existing H-naming convention)
+#
+# Chemistry note: the post-Michael Cα-Cβ bond is sp3-sp3 single, ~1.54 Å.
+# The new H on Cα fills the sp3 valence that the double bond no longer occupies.
+# Both carbons retype from CR1 (sp2 vinyl) to CT (sp3 tetrahedral aliphatic).
+#
+# References:
+#   ~/Moorhen/docs/covalent-ligand-plan.md Appendix A.2 (acrylamide mechanism)
+#   ~/Moorhen/docs/refs/nicholls-modelling-2021.pdf §3.1 (chem_mod semantics)
+
+data_mod_CYS-ACR-mod2
+
+# (1) Change Cα=Cβ from double → single
+loop_
+_chem_mod_bond.mod_id
+_chem_mod_bond.function
+_chem_mod_bond.atom_id_1
+_chem_mod_bond.atom_id_2
+_chem_mod_bond.new_type
+_chem_mod_bond.new_value_dist
+_chem_mod_bond.new_value_dist_esd
+ CYS-ACR-mod2 change <CB> <CA> single 1.54 0.02
+
+# (2) Add a new H on Cα (the Michael-addition proton)
+# (3) Retype Cα and Cβ from sp2 (CR1) → sp3 (CT)
+loop_
+_chem_mod_atom.mod_id
+_chem_mod_atom.function
+_chem_mod_atom.atom_id
+_chem_mod_atom.new_atom_id
+_chem_mod_atom.new_type_symbol
+_chem_mod_atom.new_type_energy
+_chem_mod_atom.new_partial_charge
+ CYS-ACR-mod2 add    <HCA> <HCA> H HCH1 .
+ CYS-ACR-mod2 change <CA>  .     C CT   .
+ CYS-ACR-mod2 change <CB>  .     C CT   .

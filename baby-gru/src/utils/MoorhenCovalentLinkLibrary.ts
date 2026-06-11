@@ -67,8 +67,12 @@ export interface CovLinkRegistryEntry {
     mapping: { cb: number; ca: number };
     /** Filename of the main link CIF (in the cov-links/ public assets dir). */
     link_cif: string;
-    /** "post" (uses CIF's default mod2) or "alkyne"/"alkyne_terminal" (uses mod2_cif). */
-    mod2_variant: "post" | "alkyne" | "alkyne_terminal";
+    /** Picks which mod2 block applies. "post" uses the CIF's default inline
+     * mod2 (already-bound form); the *_pre/*_terminal variants swap in a
+     * separate mod2_cif that encodes the bond-order change.
+     *   F2 ynamide: post (vinyl-thioether) | alkyne | alkyne_terminal
+     *   F1 acrylamide: post (saturated thioether) | alkene | alkene_terminal */
+    mod2_variant: "post" | "alkyne" | "alkyne_terminal" | "alkene" | "alkene_terminal";
     /** Filename of the alternative mod2 block, if mod2_variant !== "post". */
     mod2_cif?: string;
 }

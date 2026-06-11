@@ -11,7 +11,9 @@ import { removeMolecule } from "../../store/moleculesSlice";
 import { libcootApi } from "../../types/libcoot";
 import { moorhen } from "../../types/moorhen";
 import { MoorhenMolecule } from "../../utils/MoorhenMolecule";
-import { centreOnGemmiAtoms } from "../../utils/utils";
+import { centreOnGemmiAtoms, cidToSpec } from "../../utils/utils";
+import { usePauseClickAwayListener } from "../../hooks/pauseClickAwayListener";
+import { executeCovalentLink } from "../../utils/MoorhenCovalentLinkExecutor";
 import { MoorhenButton, MoorhenFileInput, MoorhenSelect, MoorhenTextInput, MoorhenToggle } from "../inputs";
 import { MoorhenMoleculeSelect } from "../inputs";
 import { MoorhenInfoCard, MoorhenStack } from "../interface-base";
@@ -39,6 +41,13 @@ const ImportLigandDictionary = (props: {
     // mid-modal without stale-closure issues.
     placeAtRef?: React.MutableRefObject<"molecule_centre" | "rotation_centre" | "peak">;
     fitToDensityRef?: React.MutableRefObject<boolean>;
+    // PyKeko v0.2.29: covalent-attachment refs. When covalentModeRef.current
+    // is true, after the standard load+merge we wait for an atomClicked
+    // event on the just-merged ligand, then run MoorhenCovalentLinkExecutor
+    // with the picked SG and the chosen warhead template.
+    covalentModeRef?: React.MutableRefObject<boolean>;
+    covalentSgCidRef?: React.MutableRefObject<string>;
+    covalentLinkIdRef?: React.MutableRefObject<string>;
 }) => {
     const dispatch = useDispatch();
     const defaultBondSmoothness = useSelector((state: moorhen.State) => state.sceneSettings.defaultBondSmoothness);
@@ -64,6 +73,9 @@ const ImportLigandDictionary = (props: {
         id,
         placeAtRef,
         fitToDensityRef,
+        covalentModeRef,
+        covalentSgCidRef,
+        covalentLinkIdRef,
     } = props;
 
     const originState = useSelector((state: moorhen.State) => state.glRef.origin);
@@ -201,8 +213,97 @@ const ImportLigandDictionary = (props: {
             }
 
             [...new Set(molNosToUpdate)].map(molNo => dispatch(triggerUpdate(molNo)));
+
+            // PyKeko v0.2.29: if the user enabled covalent attachment in
+            // the SMILES dialog, the ligand has now been added (and merged
+            // into the protein, if that path was taken). Prompt them to
+            // click any Cβ atom on it — the executor then declares the link.
+            //
+            // We arm a one-shot atomClicked listener with a 60s timeout so
+            // a missed click doesn't leave the listener attached forever.
+            // The user's previously-picked SG CID and warhead template id
+            // come from the refs (read at action time to avoid stale closures).
+            if (
+                covalentModeRef?.current &&
+                covalentSgCidRef?.current?.trim() &&
+                covalentLinkIdRef?.current
+            ) {
+                // Decide which molecule to operate on:
+                //   - If "Add to molecule" was set, the ligand is now part of
+                //     that molecule and the user will click an atom there.
+                //   - Otherwise the ligand stayed standalone — declare against
+                //     that standalone molecule.
+                const targetMolNo = addToMoleculeValueRef.current !== -1
+                    ? addToMoleculeValueRef.current
+                    : (typeof selectedMoleculeIndex === "number" ? selectedMoleculeIndex : null);
+                const targetMol = targetMolNo !== null && targetMolNo !== -999999
+                    ? store.getState().molecules.moleculeList.find((m: any) => m.molNo === targetMolNo)
+                    : newMolecule;
+                if (!targetMol) {
+                    dispatch(enqueueSnackbar({
+                        message: "Covalent attachment: could not locate the merged ligand to attach.",
+                        variant: "warning",
+                    }));
+                } else {
+                    const sgCid = covalentSgCidRef.current.trim();
+                    const linkId = covalentLinkIdRef.current;
+                    dispatch(enqueueSnackbar({
+                        message: `Ligand placed. Left-click any Cβ atom on the ligand to declare ${linkId} link to ${sgCid}.`,
+                        variant: "info",
+                        autoHideDuration: 12000,
+                    }));
+                    const timeoutMs = 60000;
+                    const armedAt = Date.now();
+                    const onAtomClicked = async (evt: any) => {
+                        if (Date.now() - armedAt > timeoutMs) {
+                            document.removeEventListener("atomClicked", onAtomClicked);
+                            return;
+                        }
+                        const pickedCid = evt?.detail?.label as string | undefined;
+                        if (!pickedCid) return;
+                        let cbShort = "";
+                        try {
+                            const spec = cidToSpec(pickedCid);
+                            if (!spec?.chain_id || spec.res_no === undefined || !spec.atom_name) return;
+                            cbShort = `//${spec.chain_id}/${spec.res_no}/${String(spec.atom_name).trim()}`;
+                        } catch (e) {
+                            console.warn("[smiles-covalent] cidToSpec failed:", e);
+                            return;
+                        }
+                        document.removeEventListener("atomClicked", onAtomClicked);
+                        try {
+                            const result = await executeCovalentLink({
+                                molecule: targetMol,
+                                sgCid,
+                                cbCid: cbShort,
+                                linkId,
+                                urlPrefix: "MoorhenAssets",
+                                commandCentre,
+                                download: true,
+                            });
+                            dispatch(enqueueSnackbar({
+                                message: result.message,
+                                variant: result.ok ? "success" : "error",
+                                autoHideDuration: 8000,
+                            }));
+                            if (result.ok) {
+                                dispatch(triggerUpdate(targetMol.molNo));
+                            }
+                        } catch (e: any) {
+                            dispatch(enqueueSnackbar({
+                                message: `Covalent attachment failed: ${e?.message || String(e)}`,
+                                variant: "error",
+                            }));
+                        }
+                    };
+                    document.addEventListener("atomClicked", onAtomClicked);
+                    setTimeout(() => {
+                        document.removeEventListener("atomClicked", onAtomClicked);
+                    }, timeoutMs);
+                }
+            }
         },
-        [moleculeSelectValueRef, createRef, molecules, commandCentre, tlc, backgroundColor, defaultBondSmoothness, addToMoleculeValueRef, originState, placeAtRef, fitToDensityRef]
+        [moleculeSelectValueRef, createRef, molecules, commandCentre, tlc, backgroundColor, defaultBondSmoothness, addToMoleculeValueRef, originState, placeAtRef, fitToDensityRef, covalentModeRef, covalentSgCidRef, covalentLinkIdRef, store, dispatch]
     );
 
     // PyKeko v0.2.15: resolve the default placement target — the centre of
@@ -398,6 +499,8 @@ const ImportLigandDictionary = (props: {
 
 export const SMILESToLigand = () => {
     const commandCentre = useCommandCentre();
+    const dispatch = useDispatch();
+    const store = useStore<RootState>();
     const [smile, setSmile] = useState<string>("");
     const [tlc, setTlc] = useState<string>("NewLig");
     const [createInstance, setCreateInstance] = useState<boolean>(true);
@@ -414,6 +517,18 @@ export const SMILESToLigand = () => {
     const [placeAt, setPlaceAt] = useState<"molecule_centre" | "rotation_centre" | "peak">("molecule_centre");
     const [fitToDensity, setFitToDensity] = useState<boolean>(false);
 
+    // PyKeko v0.2.29: covalent-attachment workflow. When enabled, after the
+    // ligand is created+merged we wait for the user to click any Cβ atom on
+    // it; that click triggers MoorhenCovalentLinkExecutor with the picked Cys
+    // SG + selected warhead template, declaring the covalent link in one
+    // session instead of requiring a separate right-click pass.
+    const [covalentMode, setCovalentMode] = useState<boolean>(false);
+    const [covalentSgCid, setCovalentSgCid] = useState<string>("");
+    const [covalentLinkId, setCovalentLinkId] = useState<string>("");
+    const [covalentPicking, setCovalentPicking] = useState<boolean>(false);
+    const [covalentRegistry, setCovalentRegistry] = useState<Array<{ id: string; family: string; name: string }>>([]);
+    const [pauseClickAwayListener, resumeClickAwayListener] = usePauseClickAwayListener();
+
     const createRef = useRef<boolean>(true);
     useEffect(() => { createRef.current = createInstance; }, [createInstance]);
     const moleculeSelectRef = useRef<null | HTMLSelectElement>(null);
@@ -429,6 +544,62 @@ export const SMILESToLigand = () => {
     useEffect(() => { placeAtRef.current = placeAt; }, [placeAt]);
     const fitToDensityRef = useRef<boolean>(false);
     useEffect(() => { fitToDensityRef.current = fitToDensity; }, [fitToDensity]);
+    const covalentModeRef = useRef<boolean>(false);
+    useEffect(() => { covalentModeRef.current = covalentMode; }, [covalentMode]);
+    const covalentSgCidRef = useRef<string>("");
+    useEffect(() => { covalentSgCidRef.current = covalentSgCid; }, [covalentSgCid]);
+    const covalentLinkIdRef = useRef<string>("");
+    useEffect(() => { covalentLinkIdRef.current = covalentLinkId; }, [covalentLinkId]);
+
+    // Load the cov-links registry on mount so the warhead-template dropdown
+    // has options ready by the time the user enables covalent mode.
+    useEffect(() => {
+        let alive = true;
+        (async () => {
+            try {
+                const resp = await fetch("MoorhenAssets/cov-links/index.json");
+                if (!resp.ok) return;
+                const j = await resp.json();
+                if (!alive) return;
+                setCovalentRegistry((j.warheads ?? []).map((w: any) => ({
+                    id: w.id, family: w.family, name: w.name,
+                })));
+                // Default to first entry so the dropdown isn't empty when
+                // the user ticks the box.
+                if (j.warheads?.[0]?.id) setCovalentLinkId(j.warheads[0].id);
+            } catch (e) {
+                console.warn("[smiles-covalent] could not load cov-links registry:", e);
+            }
+        })();
+        return () => { alive = false; };
+    }, []);
+
+    // Pick the Cys SG via the same paused-click-away pattern used by
+    // MoorhenCidInputForm and the right-click covalent panel. Listens for
+    // one atomClicked event; resets picking state in all exit paths.
+    const handlePickSg = useCallback(() => {
+        pauseClickAwayListener();
+        setCovalentPicking(true);
+    }, [pauseClickAwayListener]);
+
+    useEffect(() => {
+        if (!covalentPicking) return;
+        const onAtomClicked = (evt: any) => {
+            try {
+                const pickedCid = evt?.detail?.label as string | undefined;
+                if (!pickedCid) return;
+                const spec = cidToSpec(pickedCid);
+                if (!spec?.chain_id || spec.res_no === undefined || !spec.atom_name) return;
+                const short = `//${spec.chain_id}/${spec.res_no}/${String(spec.atom_name).trim()}`;
+                setCovalentSgCid(short);
+            } finally {
+                setCovalentPicking(false);
+                resumeClickAwayListener();
+            }
+        };
+        document.addEventListener("atomClicked", onAtomClicked, { once: true });
+        return () => document.removeEventListener("atomClicked", onAtomClicked);
+    }, [covalentPicking, resumeClickAwayListener]);
 
     const collectedProps = {
         smile,
@@ -446,6 +617,9 @@ export const SMILESToLigand = () => {
         moleculeSelectValueRef,
         placeAtRef,
         fitToDensityRef,
+        covalentModeRef,
+        covalentSgCidRef,
+        covalentLinkIdRef,
     };
 
     const smilesToPDB = async (): Promise<string> => {
@@ -668,6 +842,70 @@ export const SMILESToLigand = () => {
                 checked={fitToDensity}
                 onChange={() => setFitToDensity(!fitToDensity)}
             />
+
+            {/* PyKeko v0.2.29: covalent attachment section. Opt-in via the
+                checkbox. When enabled, the ligand is loaded + merged as usual,
+                then we listen for the user to click a Cβ atom on the newly-
+                placed ligand — that click triggers the executor which loads
+                the link CIF, runs the struct_conn surgery, downloads the
+                augmented mmCIF for refmac, and applies the mod2 to the live
+                ligand dict so the post-reaction bond orders show in-viewer. */}
+            <div style={{
+                marginTop: 8, padding: "10px 12px", border: "1px solid #ced4da",
+                borderRadius: 6, background: "#f8f9fa",
+            }}>
+                <MoorhenToggle
+                    label="Form covalent bond to Cys SG"
+                    checked={covalentMode}
+                    onChange={() => setCovalentMode(!covalentMode)}
+                />
+                {covalentMode && (
+                    <div style={{ marginTop: 8 }}>
+                        <div style={{ marginBottom: 6, fontSize: "0.85rem", color: "#495057" }}>
+                            Cys SG atom
+                        </div>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}>
+                            <button
+                                type="button"
+                                onClick={handlePickSg}
+                                disabled={covalentPicking}
+                                style={{
+                                    padding: "6px 12px", fontSize: "0.9rem",
+                                    background: covalentPicking ? "#fff3bf" : "#e7f5ff",
+                                    color: "#1971c2", border: "1px solid #4dabf7", borderRadius: 6,
+                                    cursor: covalentPicking ? "default" : "pointer", whiteSpace: "nowrap",
+                                }}
+                            >
+                                {covalentPicking ? "Left-click an atom…" : "Pick in viewer"}
+                            </button>
+                            <input
+                                style={{ flex: 1, padding: "6px 8px", fontSize: "0.95rem", fontFamily: "monospace" }}
+                                value={covalentSgCid}
+                                onChange={(e) => setCovalentSgCid(e.target.value)}
+                                placeholder="//A/481/SG  (or type)"
+                            />
+                        </div>
+                        <div style={{ marginBottom: 6, fontSize: "0.85rem", color: "#495057" }}>
+                            Warhead template
+                        </div>
+                        <MoorhenSelect
+                            value={covalentLinkId}
+                            onChange={(e: any) => setCovalentLinkId(e.target.value)}
+                        >
+                            {covalentRegistry.map((w) => (
+                                <option key={w.id} value={w.id}>
+                                    {w.id} — {w.family} — {w.name}
+                                </option>
+                            ))}
+                        </MoorhenSelect>
+                        <div style={{ marginTop: 8, fontSize: "0.8rem", color: "#868e96", lineHeight: 1.35 }}>
+                            After the ligand is added you'll be prompted to left-click any Cβ atom on it to declare the link.
+                            The viewer will update bond orders to the post-reaction form (e.g. alkyne C≡C → vinyl C=C for F2,
+                            alkene C=C → saturated C-C for F1) and an augmented mmCIF will download for refmacat.
+                        </div>
+                    </div>
+                )}
+            </div>
         </MoorhenStack>
     );
 

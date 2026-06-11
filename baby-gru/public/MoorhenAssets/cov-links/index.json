@@ -44,6 +44,41 @@
       "mod2_variant": "alkyne_terminal",
       "mod2_cif": "CYS-YNA-mod2-alkyne.cif",
       "$comment": "Terminal-alkyne sub-variant. Same mod2 as 'pre' but the resulting Cb has H instead of an R group. Plan-doc §A.3 adds one extra angle restraint at runtime for SG-Cb-H."
+    },
+    {
+      "id": "CYS-ACR-post",
+      "family": "F1",
+      "name": "Cys-S to acrylamide post-product (saturated beta-thioether)",
+      "drugs": ["ibrutinib (bound)", "osimertinib (bound)", "zanubrutinib (bound, acryl form)"],
+      "smarts": "[#16][C:1][C:2]C(=O)N",
+      "mapping": { "cb": 1, "ca": 2 },
+      "link_cif": "CYS-ACR.cif",
+      "mod2_variant": "post",
+      "$comment": "Matches the post-reaction form: saturated sp3-sp3 -S-CH(R)-CH2-C(=O)N- (no C=C). Distinct from F2 vinyl-thioether by SMARTS bond order between :1 and :2. Use when the ligand was uploaded as the bound state with sp3 carbons (e.g. ibrutinib in 5P9I)."
+    },
+    {
+      "id": "CYS-ACR-pre",
+      "family": "F1",
+      "name": "Cys-S to acrylamide (alkene pre-reaction form)",
+      "drugs": ["ibrutinib (free drug)", "osimertinib (free drug)"],
+      "smarts": "[C:1]=[C:2]C(=O)N",
+      "mapping": { "cb": 1, "ca": 2 },
+      "link_cif": "CYS-ACR.cif",
+      "mod2_variant": "alkene",
+      "mod2_cif": "CYS-ACR-mod2-alkene.cif",
+      "$comment": "Matches the free-drug alkene form: R-CH=CH-C(=O)-N. The mod2 transforms double->single, adds H on Calpha, retypes sp2->sp3. Internal-alkene variant. NOTE: this SMARTS is more general than CYS-YNA-pre/pre-terminal so the F2-pre entries above must come FIRST in this registry — they're more specific (triple bond) and should match before falling through to this F1-pre entry."
+    },
+    {
+      "id": "CYS-ACR-pre-terminal",
+      "family": "F1",
+      "name": "Cys-S to terminal acrylamide (CH2=CH-C(=O)-N, Ibrutinib-class)",
+      "drugs": ["ibrutinib (free drug)"],
+      "smarts": "[CH2:1]=[CH:2]C(=O)N",
+      "mapping": { "cb": 1, "ca": 2 },
+      "link_cif": "CYS-ACR.cif",
+      "mod2_variant": "alkene_terminal",
+      "mod2_cif": "CYS-ACR-mod2-alkene.cif",
+      "$comment": "Terminal-acrylamide sub-variant (H2C=CHC(=O)N). Same mod2 as CYS-ACR-pre but Cb has 2H pre-reaction, one of which becomes the SG attachment site. The JS detector appends one extra angle restraint at runtime for SG-Cb-H (109.5°, sp3 tetrahedral)."
     }
   ]
 }

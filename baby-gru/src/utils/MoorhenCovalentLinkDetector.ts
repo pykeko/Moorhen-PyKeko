@@ -69,7 +69,8 @@ export async function detectWarheadFamily(
     lig: string,
     atoms: LigandAtom[],
     bonds: LigandBond[],
-    cbIdx: number
+    cbIdx: number,
+    preferFamily?: "F1" | "F2"
 ): Promise<DetectionResult | null> {
     const registry = await ensureRegistryLoaded();
 
@@ -79,11 +80,19 @@ export async function detectWarheadFamily(
 
     const cbNeighbors = neighborsOf(cbIdx, bonds);
 
-    // Look for a carbon neighbor with bond order 2 (vinyl) or 3 (alkyne)
-    // — that's our Cα candidate. There may be multiple; we test each.
+    // Look for a carbon neighbor that's our Cα candidate. Bond order
+    // distinguishes families and variants:
+    //   order 3 → F2 ynamide pre-Michael (alkyne / alkyne_terminal)
+    //   order 2 → F2 post-product vinyl thioether (already drawn-bonded)
+    //             OR F1 acrylamide pre-Michael (alkene / alkene_terminal)
+    //   order 1 → F1 post-product saturated β-thioether (drawn-bonded)
+    // For order-2 ambiguity (F2-post vs F1-pre), we honour `preferFamily` if
+    // provided by the caller; otherwise we use the historical F2-first
+    // heuristic (vinyl-thioether is the more common drawn form when the user
+    // loaded the post-bound ligand).
     for (const cbN of cbNeighbors) {
         if (atoms[cbN.idx].element !== "C") continue;
-        if (cbN.order !== 2 && cbN.order !== 3) continue;
+        if (cbN.order < 1 || cbN.order > 3) continue;
         const caIdx = cbN.idx;
         const caBondOrder = cbN.order;
 
@@ -91,11 +100,9 @@ export async function detectWarheadFamily(
         const caCarbonyl = findCarbonylNeighbor(caIdx, cbIdx, atoms, bonds);
         if (caCarbonyl < 0) continue;
 
-        // Walk the bond order between Cα and Cβ to pick the F2 variant.
-        // Bond=3 → alkyne (pre-Michael); Bond=2 → vinyl (post-product).
-        // Distinguish terminal alkyne (Spebrutinib-class) by whether Cβ
-        // has only one carbon neighbor (Cα) and an H — vs. having Cα + a
-        // Cγ substituent.
+        // Distinguish terminal vs internal by whether Cβ has any C neighbour
+        // besides Cα. Terminal warheads (Spebrutinib alkyne, simple
+        // acrylamide ethylene) have only Cα + H's on Cβ.
         const cbCarbonNeighbors = cbNeighbors
             .filter(
                 (n) => atoms[n.idx].element === "C" && n.idx !== caIdx
@@ -104,16 +111,32 @@ export async function detectWarheadFamily(
             (n) => atoms[n.idx].element === "H"
         );
 
-        const wantedVariant: "post" | "alkyne" | "alkyne_terminal" =
-            caBondOrder === 2
-                ? "post"
-                : cbCarbonNeighbors === 0 && cbHasH
-                  ? "alkyne_terminal"
-                  : "alkyne";
+        // Pick the family + variant.
+        let family: "F1" | "F2";
+        let wantedVariant: CovLinkRegistryEntry["mod2_variant"];
+        if (caBondOrder === 3) {
+            family = "F2";
+            wantedVariant = cbCarbonNeighbors === 0 && cbHasH
+                ? "alkyne_terminal"
+                : "alkyne";
+        } else if (caBondOrder === 1) {
+            family = "F1";
+            wantedVariant = "post";
+        } else {
+            // caBondOrder === 2: F2-post vs F1-pre. preferFamily wins; default F2-post.
+            family = preferFamily === "F1" ? "F1" : "F2";
+            if (family === "F1") {
+                wantedVariant = cbCarbonNeighbors === 0 && cbHasH
+                    ? "alkene_terminal"
+                    : "alkene";
+            } else {
+                wantedVariant = "post";
+            }
+        }
 
         // Find the matching registry entry.
         const entry = registry.warheads.find(
-            (w) => w.family === "F2" && w.mod2_variant === wantedVariant
+            (w) => w.family === family && w.mod2_variant === wantedVariant
         );
         if (!entry) {
             continue;
