@@ -795,9 +795,32 @@ const cmdColor = async (cmd: PymolCommand, env: any, registry: PymolRegistry) =>
         // per-rule cost is just an array push; the redraw happens once per
         // molecule regardless, so this doesn't add Coot-worker round-trips.
         let customRepsTouched = 0;
+        let stalePerRepStripped = 0;
         for (const rep of ((molecule.representations as moorhen.MoleculeRepresentation[]) || [])) {
             const isCustom = !!(rep as any).colourRules && (rep as any).colourRules.length > 0 && !(rep as any).useDefaultColourRules;
             if (!isCustom) continue;
+            // v0.2.28: extend the v0.2.18 first-match-wins dedupe to per-rep
+            // colourRules. For CB/stick/sphere reps Coot ships the full rule
+            // list in ONE shim_set_bond_colours call (MoorhenMoleculeRepresentation
+            // applyColourRules) and picks first-match-wins per atom — so an
+            // older same-cid rule in the rep's own array silently shadowed
+            // the new one. The defaults-side dedupe above only covered reps
+            // that still rode molecule.defaultColourRules; custom reps kept
+            // a stale earlier rule (e.g. a grey //A from a prior color cmd
+            // or from manual GUI colouring). Skip the dedupe if the rep's
+            // array IS the defaults reference (already handled above).
+            const repRules = (rep as any).colourRules as { cid: string; isMultiColourRule?: boolean }[];
+            if (repRules !== (molecule as any).defaultColourRules) {
+                for (let i = repRules.length - 1; i >= 0; i--) {
+                    // Skip multi-colour rules (rainbows, b-factor, electrostatics)
+                    // — those encode many cids in one rule and shouldn't be
+                    // stripped by a single-cid match.
+                    if (!repRules[i].isMultiColourRule && repRules[i].cid === cid) {
+                        repRules.splice(i, 1);
+                        stalePerRepStripped++;
+                    }
+                }
+            }
             try {
                 (rep as any).addColourRule?.("cid", cid, hex, [cid, hex]);
                 customRepsTouched++;
@@ -805,7 +828,7 @@ const cmdColor = async (cmd: PymolCommand, env: any, registry: PymolRegistry) =>
         }
         // Diagnostic: surfaces what cmdColor actually did so future "color X,
         // chain Y didn't work" reports come with the rep enumeration baked in.
-        console.log(`[pymol:${cmd.lineNo}] color ${colorName} → ${molecule.name}: rule cid=${cid} added to molecule defaults; pushed to ${customRepsTouched} custom rep(s) of ${molecule.representations.length} total`);
+        console.log(`[pymol:${cmd.lineNo}] color ${colorName} → ${molecule.name}: rule cid=${cid} added to molecule defaults; pushed to ${customRepsTouched} custom rep(s) of ${molecule.representations.length} total; ${stalePerRepStripped} stale per-rep rule(s) stripped`);
         touched.add(molecule);
     }
     for (const molecule of touched) {

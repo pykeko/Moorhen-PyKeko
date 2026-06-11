@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Draggable from "react-draggable";
 import { useCommandCentre } from "../../InstanceManager";
+import { usePauseClickAwayListener } from "../../hooks/pauseClickAwayListener";
 import { moorhen } from "../../types/moorhen";
 import { MoorhenContextButtonBase, ContextButtonProps } from "./MoorhenContextButtonBase";
 import {
@@ -47,6 +48,14 @@ const LinkPanel = (props: {
     const [busy, setBusy] = useState(false);
     const [status, setStatus] = useState("");
     const [statusKind, setStatusKind] = useState<"info" | "error" | "success">("info");
+    // The popover's MoorhenClickAwayListener listens on "click", so the browser-
+    // synthesized click that follows the canvas mousedown gets routed to the
+    // listener AFTER atomClicked has fired — but the listener doesn't know that
+    // and treats the canvas click as outside-the-popover, dismissing the entire
+    // panel before the user sees the picked CID. Pause it while picking is
+    // active (same pattern MoorhenCidInputForm uses); resume in onAtomClicked,
+    // in stopPicking-on-cancel, and in the hook's own unmount cleanup.
+    const [pauseClickAwayListener, resumeClickAwayListener] = usePauseClickAwayListener();
 
     // Load the cov-links registry on mount.
     //
@@ -100,13 +109,14 @@ const LinkPanel = (props: {
         if (!picking) return;
         const onAtomClicked = (evt: any) => {
             const pickedCid = evt?.detail?.label as string | undefined;
-            if (!pickedCid) { setPicking(false); return; }
+            if (!pickedCid) { setPicking(false); resumeClickAwayListener(); return; }
             try {
                 const spec = cidToSpec(pickedCid);
                 if (!spec?.chain_id || spec.res_no === undefined || !spec.atom_name) {
                     setStatus(`Could not parse picked CID: ${pickedCid}`);
                     setStatusKind("error");
                     setPicking(false);
+                    resumeClickAwayListener();
                     return;
                 }
                 const short = `//${spec.chain_id}/${spec.res_no}/${String(spec.atom_name).trim()}`;
@@ -118,12 +128,13 @@ const LinkPanel = (props: {
                 setStatusKind("error");
             }
             setPicking(false);
+            resumeClickAwayListener();
         };
         document.addEventListener("atomClicked", onAtomClicked, { once: true });
         return () => {
             document.removeEventListener("atomClicked", onAtomClicked);
         };
-    }, [picking]);
+    }, [picking, resumeClickAwayListener]);
 
     const submit = useCallback(async () => {
         if (!cbCid.trim() || !linkId) return;
@@ -262,7 +273,12 @@ const LinkPanel = (props: {
                 <label style={{ display: "block", fontSize: "0.85rem", color: "#495057" }}>Ligand atom</label>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <button
-                        onClick={() => { setPicking(true); setStatus("Click any atom in the 3D viewer…"); setStatusKind("info"); }}
+                        onClick={() => {
+                            pauseClickAwayListener();
+                            setPicking(true);
+                            setStatus("Left-click any atom in the 3D viewer…");
+                            setStatusKind("info");
+                        }}
                         disabled={busy || picking}
                         style={{
                             padding: "6px 12px", fontSize: "0.9rem",
@@ -271,7 +287,7 @@ const LinkPanel = (props: {
                             cursor: busy ? "not-allowed" : "pointer", whiteSpace: "nowrap",
                         }}
                     >
-                        {picking ? "Click an atom…" : "Pick in viewer"}
+                        {picking ? "Left-click an atom…" : "Pick in viewer"}
                     </button>
                     <input
                         style={{ flex: 1, padding: "6px 8px", fontSize: "0.95rem", fontFamily: "monospace" }}
@@ -314,7 +330,10 @@ const LinkPanel = (props: {
                         padding: "8px 14px", fontSize: "0.95rem",
                         background: "#e9ecef", color: "#495057", border: "none", borderRadius: 6, cursor: "pointer",
                     }}
-                    onClick={() => setShowOverlay(false)}
+                    onClick={() => {
+                        if (picking) resumeClickAwayListener();
+                        setShowOverlay(false);
+                    }}
                     disabled={busy}
                 >Cancel</button>
             </div>
