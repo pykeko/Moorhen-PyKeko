@@ -1271,7 +1271,15 @@ export class MoorhenTimeCapsule {
         dispatch: Dispatch<AnyAction>
     ): Promise<number> {
         timeCapsuleRef.current.setBusy(true);
-        const sessionData = moorhensession.Session.toObject(sessionProtoMessage) as backupSession;
+        // arrays:true makes empty `repeated` proto fields decode to [] rather than
+        // undefined; objects:true does the same for `map<>` fields. Without these,
+        // a session saved with no custom colour rules / no representations sets
+        // `storedMoleculeData.defaultColourRules` to undefined, and loadSessionData's
+        // `defaultColourRules.map(...)` throws "Cannot read properties of undefined".
+        // Bit the CLI session-load path; drag-drop only escaped if the session
+        // happened to have populated arrays. Same fix protects every other repeated
+        // field in the schema.
+        const sessionData = moorhensession.Session.toObject(sessionProtoMessage, { arrays: true, objects: true }) as backupSession;
         const status = await MoorhenTimeCapsule.loadSessionData(
             sessionData,
             monomerLibraryPath,
