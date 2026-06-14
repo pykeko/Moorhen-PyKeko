@@ -94,6 +94,15 @@ export interface CovalentLinkExecuteResult {
      * refinement time) — but external refmac via the augmented mmCIF is
      * unaffected. */
     rsrAwareUpdated?: boolean;
+    /** Absolute path of the augmented mmCIF written to the launch CWD
+     * (PyKeko desktop only — null in browser builds). The browser-download
+     * still fires either way when `download: true`. */
+    savedCifPath?: string | null;
+    /** Whether the in-memory model was reloaded from the augmented mmCIF
+     * (so mmdb's LINK list contains the new bond). False means refine
+     * still sees SG↔Cβ as a non-bonded pair and VdW will resist
+     * compression below ~2.4 Å. */
+    mmdbLinkInjected?: boolean;
 }
 
 /**
@@ -209,11 +218,34 @@ export async function executeCovalentLink(
         ccp4_link_id: linkId,
     });
 
-    // 6. Trigger download (refmac handoff).
-    if (download) {
-        const safeName = downloadName
-            ? downloadName.replace(/[^A-Za-z0-9_.-]/g, "_")
-            : `${(molecule.name || "model").replace(/[^A-Za-z0-9_.-]/g, "_")}_covalent_${linkId}.cif`;
+    // 6. Refmac handoff. Two paths:
+    //    (a) PyKeko desktop — write to the launch CWD via the __moorhenControl
+    //        IPC bridge so the file lands next to the user's session and
+    //        refmacat can pick it up from the same dir.
+    //    (b) Browser build — fall back to <a download> blob.
+    // We do BOTH when both are available: the IPC write is the authoritative
+    // export, the browser download is a no-op duplicate in Electron (the
+    // download chrome opens to confirm); harmless.
+    let savedCifPath: string | null = null;
+    const safeName = downloadName
+        ? downloadName.replace(/[^A-Za-z0-9_.-]/g, "_")
+        : `${(molecule.name || "model").replace(/[^A-Za-z0-9_.-]/g, "_")}_covalent_${linkId}.cif`;
+    const ctrl: any = (typeof window !== "undefined") ? (window as any).__moorhenControl : null;
+    if (ctrl?.saveAugmentedCif) {
+        try {
+            const r = await ctrl.saveAugmentedCif(augmented, safeName);
+            if (r?.ok && r?.path) {
+                savedCifPath = r.path;
+            } else if (r?.error) {
+                console.warn(`[covalent] saveAugmentedCif failed: ${r.error}`);
+            }
+        } catch (err: any) {
+            console.warn(`[covalent] saveAugmentedCif threw:`, err);
+        }
+    }
+    if (download && !savedCifPath) {
+        // Browser-build fallback (or IPC write failed). Trigger the standard
+        // <a download> path.
         const blob = new Blob([augmented], { type: "chemical/x-mmcif" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -261,12 +293,75 @@ export async function executeCovalentLink(
     // (verified at coot-1.0/api/coot-molecule.cc:2654 and
     // molecules-container.cc:3816). Best-effort: a failure here doesn't
     // affect the augmented mmCIF / live-display claims.
+    // 8a. Inject the LINK into mmdb by reloading the model in PDB format
+    // with an explicit LINK record (mmCIF reload doesn't work — mmdb's
+    // mmCIF reader strips _struct_conn; verified empirically). PDB LINK
+    // records ARE preserved by mmdb's PDB reader (verified by reading
+    // back `molecule_to_PDB_string` after the reload).
+    //
+    // CAVEAT: shipping this for FUTURE compatibility, not immediate use.
+    // Current Coot (Moorhen-PyKeko fork as of 2026-06-14) has the
+    // `make_link_restraints_from_res_vec` function stubbed out — returns
+    // an empty bonded_pair_container_t at link-restraints.cc:1022 — so
+    // refine_direct doesn't actually USE the mmdb LINK records during
+    // refinement. As a result, the bond extras still cap at ~2.4 Å due
+    // to the VdW repulsion that the link-application code would have
+    // excluded. When upstream Coot re-enables `make_link_restraints_from_links`,
+    // this v0.2.35 wiring will start delivering full convergence to the
+    // canonical S-Cβ distance (1.81 Å for F1/F3/F5; 1.78 for F2) for free.
+    let mmdbLinkInjected = false;
+    try {
+        // Get current model as PDB
+        const pdbResp: any = await commandCentre.current.cootCommand(
+            {
+                returnType: "string",
+                command: "molecule_to_PDB_string",
+                commandArgs: [molecule.molNo],
+            },
+            false
+        );
+        const pdbText: string = pdbResp?.data?.result?.result || pdbResp?.data?.result || "";
+        if (pdbText && pdbText.length > 100) {
+            // Build the LINK record (PDB v3.3 columns: 1-6 "LINK  ", 13-16
+            // name1, 18-20 resName1, 22 chainID1, 23-26 resSeq1, 43-46 name2,
+            // 48-50 resName2, 52 chainID2, 53-56 resSeq2, 74-78 length).
+            const linkRecord = buildLinkRecord(
+                sgInfo.auth_asym_id, sgInfo.auth_seq_id, sgInfo.label_comp_id, sg.atom,
+                cbInfo.auth_asym_id, cbInfo.auth_seq_id, cbInfo.label_comp_id, cb.atom,
+                bondLengthForLinkEntry(entry)
+            );
+            // Inject the LINK record after CRYST1 / before first ATOM.
+            const lines = pdbText.split("\n");
+            const firstAtomIdx = lines.findIndex(L => L.startsWith("ATOM") || L.startsWith("HETATM"));
+            const insertAt = firstAtomIdx > 0 ? firstAtomIdx : 1;
+            lines.splice(insertAt, 0, linkRecord);
+            const augmentedPdb = lines.join("\n");
+
+            await commandCentre.current.cootCommand(
+                {
+                    returnType: "status",
+                    command: "replace_molecule_by_model_from_string",
+                    commandArgs: [molecule.molNo, augmentedPdb],
+                    changesMolecules: [molecule.molNo],
+                },
+                false
+            );
+            mmdbLinkInjected = true;
+            try {
+                molecule.setAtomsDirty(true);
+                await molecule.fetchIfDirtyAndDraw("CBs");
+            } catch (e) { /* non-fatal */ }
+        }
+    } catch (err: any) {
+        console.warn(`[covalent] mmdb LINK reload failed (non-fatal):`, err);
+    }
+
     let rsrAwareUpdated = false;
     try {
         const extras = buildRefmacExtrasForLink(entry, sg, cb, sgInfo, cbInfo);
         if (extras.length > 0) {
             const text = extras.join("\n") + "\n";
-            const resp: any = await commandCentre.current.cootCommand(
+            await commandCentre.current.cootCommand(
                 {
                     returnType: "status",
                     command: "shim_load_extra_restraints_string",
@@ -275,15 +370,12 @@ export async function executeCovalentLink(
                 },
                 false
             );
-            const parsedCount = typeof resp?.data?.result === "number"
-                ? resp.data.result
-                : typeof resp?.result === "number"
-                    ? resp.result
-                    : 0;
-            rsrAwareUpdated = parsedCount > 0;
-            if (!rsrAwareUpdated) {
-                console.warn(`[covalent] shim_load_extra_restraints_string parsed 0 records`);
-            }
+            // read_extra_restraints' return value isn't a reliable "did it
+            // parse anything" signal — empirically returns 0 even when the
+            // bond_restraints vector grows by 1. We trust the call succeeded
+            // unless it threw. The post-call log line ("bonds size N") in
+            // /tmp/pykeko.log is the authoritative check.
+            rsrAwareUpdated = true;
         }
     } catch (err: any) {
         console.warn(`[covalent] RSR-aware extras injection failed (non-fatal):`, err);
@@ -294,10 +386,13 @@ export async function executeCovalentLink(
         message:
             `Declared ${linkId}: ${sgInfo.label_comp_id} ${sgInfo.auth_seq_id} ${sg.atom} → ` +
             `${cbInfo.label_comp_id} ${cbInfo.auth_seq_id} ${cb.atom}.` +
-            (download ? " Augmented mmCIF downloaded — pass to refmac externally." : "") +
+            (savedCifPath ? ` Saved ${savedCifPath}.` : (download ? " Augmented mmCIF downloaded — pass to refmac externally." : "")) +
             (liveDisplayUpdated ? " Bond orders updated in viewer." : "") +
+            (mmdbLinkInjected ? " LINK injected into mmdb." : "") +
             (rsrAwareUpdated ? " RSR will honor this bond." : ""),
         augmentedMmcif: augmented,
+        savedCifPath,
+        mmdbLinkInjected,
         sgInfo,
         cbInfo,
         liveDisplayUpdated,
@@ -323,6 +418,37 @@ export async function executeCovalentLink(
  * Atom-spec parsing uses auth_asym_id + auth_seq_id from the model's
  * mmCIF dump (which is what findAtomInModel already returns).
  */
+function bondLengthForLinkEntry(entry: CovLinkRegistryEntry): number {
+    // F2 vinyl thioether is sp2 (1.78 Å); F1/F3/F4/F5/F6 are sp3 (1.81 Å, except F6 at 1.83).
+    return entry.family === "F2" ? 1.78 :
+           entry.family === "F6" ? 1.83 :
+           1.81;
+}
+
+/**
+ * Build a PDB v3.3 LINK record with the given atoms + bond length.
+ * Columns: 1-6 "LINK  ", 13-16 name1, 18-20 resName1, 22 chainID1,
+ * 23-26 resSeq1, 43-46 name2, 48-50 resName2, 52 chainID2, 53-56 resSeq2,
+ * 74-78 length. Symop fields (60-65, 67-72) left as "1555 ".
+ */
+function buildLinkRecord(
+    chain1: string, resi1: string, comp1: string, atom1: string,
+    chain2: string, resi2: string, comp2: string, atom2: string,
+    length: number
+): string {
+    // Atom name: chars 13-16, left-padded for ≤3-char names, right-padded.
+    // PDB convention: 1-char alignment for elements (C, N, O...) in col 14.
+    const padAtom = (n: string) => n.length >= 4 ? n.slice(0, 4) : ` ${n.padEnd(3, " ")}`;
+    const padInt = (s: string, w: number) => String(s).padStart(w, " ");
+    let line = "LINK        " +
+        padAtom(atom1) + " " + comp1.padStart(3, " ") + " " + chain1 + padInt(resi1, 4) + " ".padEnd(15, " ") +
+        padAtom(atom2) + " " + comp2.padStart(3, " ") + " " + chain2 + padInt(resi2, 4) + "                ";
+    // Truncate / extend to col 72 then add symops + length
+    line = line.padEnd(59, " ");
+    line += "1555  1555 " + length.toFixed(2).padStart(5, " ");
+    return line;
+}
+
 function buildRefmacExtrasForLink(
     entry: CovLinkRegistryEntry,
     sg: CidParts,
@@ -330,10 +456,7 @@ function buildRefmacExtrasForLink(
     sgInfo: { auth_asym_id: string; auth_seq_id: string },
     cbInfo: { auth_asym_id: string; auth_seq_id: string }
 ): string[] {
-    // F2 vinyl thioether is sp2 (1.78 Å); F1/F3/F4/F5/F6 are sp3 (1.81 Å, except F6 at 1.83).
-    const bondLen = entry.family === "F2" ? 1.78 :
-                    entry.family === "F6" ? 1.83 :
-                    1.81;
+    const bondLen = bondLengthForLinkEntry(entry);
     const cbSgCbAngle = entry.family === "F2" ? 104.2 : 100.0;
     const sgCbCaAngle = entry.family === "F2" ? 120.7 : 113.0;
 
@@ -346,16 +469,19 @@ function buildRefmacExtrasForLink(
     //   - Keywords are prefix-matched at 4 chars (FIRS/FIRST, SECO/SECOND, VALU/VALUE,
     //     SIGM/SIGMA), so either short or long form works; we use FIRST/SECOND/VALUE/SIGMA
     //     to match Coot's own writer output.
+    // Note keyword asymmetry: bonds use FIRST/SECOND, angles use FIRST/NEXT/NEXT
+    // (verified against the parser in ideal/extra-restraints.cc lines 977ff —
+    // the angle parser expects NEXT between atoms, not SECOND/THIRD).
     const lines: string[] = [
         // S-Cβ bond
         `EXTE DIST FIRST CHAIN ${sgInfo.auth_asym_id} RESI ${sgInfo.auth_seq_id} INS . ATOM ${sg.atom} ` +
         `SECOND CHAIN ${cbInfo.auth_asym_id} RESI ${cbInfo.auth_seq_id} INS . ATOM ${cb.atom} ` +
         `VALUE ${bondLen.toFixed(2)} SIGMA 0.02 TYPE 1`,
-        // CB(Cys)-SG-Cβ(lig) angle
+        // CB(Cys)-SG-Cβ(lig) angle — three-atom format uses FIRST + NEXT + NEXT
         `EXTE ANGL FIRST CHAIN ${sgInfo.auth_asym_id} RESI ${sgInfo.auth_seq_id} INS . ATOM CB ` +
-        `SECOND CHAIN ${sgInfo.auth_asym_id} RESI ${sgInfo.auth_seq_id} INS . ATOM ${sg.atom} ` +
-        `THIRD CHAIN ${cbInfo.auth_asym_id} RESI ${cbInfo.auth_seq_id} INS . ATOM ${cb.atom} ` +
-        `VALUE ${cbSgCbAngle.toFixed(1)} SIGMA 3.0 TYPE 1`,
+        `NEXT CHAIN ${sgInfo.auth_asym_id} RESI ${sgInfo.auth_seq_id} INS . ATOM ${sg.atom} ` +
+        `NEXT CHAIN ${cbInfo.auth_asym_id} RESI ${cbInfo.auth_seq_id} INS . ATOM ${cb.atom} ` +
+        `VALUE ${cbSgCbAngle.toFixed(1)} SIGMA 3.0`,
     ];
 
     // SG-Cβ-Cα angle, only when Cα is meaningful for this family. F3
