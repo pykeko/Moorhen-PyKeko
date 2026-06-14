@@ -23,10 +23,14 @@ export interface CovLinkAtomMap {
     lig: string;
     /** Cβ atom-id (the carbon that bonds to Cys SG). */
     cb: string;
-    /** Cα atom-id (the carbon adjacent to Cβ on the carbonyl side). */
-    ca: string;
-    /** Carbonyl-C atom-id (the C of the amide group). */
-    co: string;
+    /** Cα atom-id (the carbon adjacent to Cβ on the carbonyl side).
+     * Undefined for F3 chloroacetamide where Cβ is directly bonded to the
+     * carbonyl-C (no intervening carbon). */
+    ca?: string;
+    /** Carbonyl-C atom-id (the C of the amide group).
+     * Undefined for warheads with no amide carbonyl (F4 epoxide, F6 reversible
+     * carbonyl) where the chemistry happens at different atoms. */
+    co?: string;
     /**
      * Cγ atom-id (the substituent past Cβ on the side opposite to Cα).
      * For methyl butynamides (XQQ acalabrutinib) this is C21 — the methyl C.
@@ -35,8 +39,8 @@ export interface CovLinkAtomMap {
      * place where the methyl would be — the detector resolves it as the
      * H name in that case.
      * Used in v2 plane + dihedral restraints (per AceDRG convention).
-     */
-    cg: string;
+     * Undefined for F3 chloroacetamide (no Cγ — only one warhead carbon). */
+    cg?: string;
     /** Amide-N atom-id. */
     n: string;
     /** Carbonyl-O atom-id. */
@@ -53,6 +57,12 @@ export interface CovLinkAtomMap {
      * Empty string when the input is the post-product form.
      */
     hca?: string;
+    /**
+     * Cl atom-id for the leaving group in F3 chloroacetamide pre-reaction
+     * input. Undefined for post-product F3 (Cl already gone) and for
+     * F1/F2/F4-F6 chemistries.
+     */
+    cl?: string;
 }
 
 /** A registry entry from cov-links/index.json. */
@@ -71,8 +81,10 @@ export interface CovLinkRegistryEntry {
      * mod2 (already-bound form); the *_pre/*_terminal variants swap in a
      * separate mod2_cif that encodes the bond-order change.
      *   F2 ynamide: post (vinyl-thioether) | alkyne | alkyne_terminal
-     *   F1 acrylamide: post (saturated thioether) | alkene | alkene_terminal */
-    mod2_variant: "post" | "alkyne" | "alkyne_terminal" | "alkene" | "alkene_terminal";
+     *   F1 acrylamide: post (saturated thioether) | alkene | alkene_terminal
+     *   F3 chloroacetamide: post (sat. β-thioether, no Cl) | chloride (Cl present)
+     *   F5 maleimide: post (3-thiosuccinimide) | alkene_ring (maleimide ring C=C) */
+    mod2_variant: "post" | "alkyne" | "alkyne_terminal" | "alkene" | "alkene_terminal" | "chloride" | "alkene_ring";
     /** Filename of the alternative mod2 block, if mod2_variant !== "post". */
     mod2_cif?: string;
 }
@@ -138,17 +150,22 @@ export async function loadLinkCifTemplate(
  *   <HCA>          → atomMap.hca   (alkyne input only)
  */
 export function applyAtomMap(cifText: string, atomMap: CovLinkAtomMap): string {
+    // Required fields (lig, cb, co, n, o) always substitute. Others only
+    // if present in the map — different warhead families populate different
+    // subsets of fields (e.g. F3 chloroacetamide has no Cα/Cγ/HCA; F1/F2
+    // have no Cl).
     const replacements: [RegExp, string][] = [
         [/<LIG>/g, atomMap.lig],
         [/<CB>/g, atomMap.cb],
-        [/<CA>/g, atomMap.ca],
-        [/<CG>/g, atomMap.cg],
         [/<CO>/g, atomMap.co],
         [/<N>/g, atomMap.n],
         [/<O>/g, atomMap.o],
     ];
+    if (atomMap.ca) replacements.push([/<CA>/g, atomMap.ca]);
+    if (atomMap.cg) replacements.push([/<CG>/g, atomMap.cg]);
     if (atomMap.hcb) replacements.push([/<HCB>/g, atomMap.hcb]);
     if (atomMap.hca) replacements.push([/<HCA>/g, atomMap.hca]);
+    if (atomMap.cl) replacements.push([/<CL>/g, atomMap.cl]);
 
     let result = cifText;
     for (const [pattern, value] of replacements) {
@@ -368,5 +385,65 @@ export function buildAtomMap(
         o: atoms[oIdx].name,
         hcb: hcbIdx !== undefined ? atoms[hcbIdx].name : undefined,
         hca: hcaName,
+    };
+}
+
+/**
+ * Atom-map builder for F3 chloroacetamide chemistry, where the attack
+ * carbon (Cβ) is bonded DIRECTLY to the carbonyl-C — there's no separate
+ * Cα or Cγ between them. The map populates cb, co, n, o, optional cl
+ * (pre-reaction input), optional hcb (post-product input).
+ *
+ * @param coIdx index of the carbonyl-C in the atoms array. The caller
+ *              (detector) identifies it as the direct C neighbour of
+ *              Cβ that has both =O and -N neighbours.
+ */
+export function buildAtomMapF3(
+    lig: string,
+    atoms: LigandAtom[],
+    bonds: LigandBond[],
+    cbIdx: number,
+    coIdx: number
+): CovLinkAtomMap {
+    const neighborsOf = (i: number): number[] =>
+        bonds
+            .filter((b) => b.a === i || b.b === i)
+            .map((b) => (b.a === i ? b.b : b.a));
+
+    // Find =O and amide-N attached to the carbonyl-C.
+    let oIdx = -1;
+    let nIdx = -1;
+    for (const m of neighborsOf(coIdx)) {
+        if (atoms[m].element === "O") {
+            const isDouble = bonds.some(
+                (b) =>
+                    ((b.a === coIdx && b.b === m) ||
+                        (b.b === coIdx && b.a === m)) &&
+                    b.order === 2
+            );
+            if (isDouble) oIdx = m;
+        } else if (atoms[m].element === "N") {
+            nIdx = m;
+        }
+    }
+    if (oIdx < 0 || nIdx < 0) {
+        throw new Error(
+            `buildAtomMapF3: could not find amide O= or N for carbonyl-C ${atoms[coIdx].name}`
+        );
+    }
+
+    // Cβ's neighbours: look for Cl (pre-reaction leaving group) and any H.
+    const cbNeighbors = neighborsOf(cbIdx);
+    const clIdx = cbNeighbors.find((i) => atoms[i].element === "Cl");
+    const hcbIdx = cbNeighbors.find((i) => atoms[i].element === "H");
+
+    return {
+        lig,
+        cb: atoms[cbIdx].name,
+        co: atoms[coIdx].name,
+        n: atoms[nIdx].name,
+        o: atoms[oIdx].name,
+        cl: clIdx !== undefined ? atoms[clIdx].name : undefined,
+        hcb: hcbIdx !== undefined ? atoms[hcbIdx].name : undefined,
     };
 }

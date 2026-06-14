@@ -24,6 +24,7 @@
 import {
     ensureRegistryLoaded,
     buildAtomMap,
+    buildAtomMapF3,
     LigandAtom,
     LigandBond,
     CovLinkAtomMap,
@@ -72,7 +73,7 @@ export async function detectWarheadFamily(
     atoms: LigandAtom[],
     bonds: LigandBond[],
     cbIdx: number,
-    preferFamily?: "F1" | "F2"
+    preferFamily?: "F1" | "F2" | "F3" | "F5"
 ): Promise<DetectionResult | null> {
     const registry = await ensureRegistryLoaded();
 
@@ -113,8 +114,32 @@ export async function detectWarheadFamily(
             (n) => atoms[n.idx].element === "H"
         );
 
+        // F5 maleimide ring check: distinguishes F5 from F1/F2 when caBondOrder
+        // is 2 (the C=C). The maleimide signature: Cβ has a SEPARATE carbon
+        // neighbour (not Cα) that is itself a carbonyl-C, AND that carbonyl
+        // is bonded to the same amide-N as the Cα-side carbonyl (closes the
+        // 5-ring). If yes → F5 maleimide pre-Michael (alkene_ring variant).
+        let isMaleimideRing = false;
+        if (caBondOrder === 2) {
+            const cbRingCarbonyl = cbNeighbors.find(
+                (n) =>
+                    n.order === 1 &&
+                    n.idx !== caIdx &&
+                    isAmideCarbonyl(n.idx, atoms, bonds)
+            );
+            if (cbRingCarbonyl) {
+                // Check that the Cα-side carbonyl's amide-N is the same atom
+                // as the Cβ-side carbonyl's amide-N (the ring closure).
+                const caN_amide = amideNitrogenOf(caCarbonyl, atoms, bonds);
+                const cbN_amide = amideNitrogenOf(cbRingCarbonyl.idx, atoms, bonds);
+                if (caN_amide >= 0 && cbN_amide >= 0 && caN_amide === cbN_amide) {
+                    isMaleimideRing = true;
+                }
+            }
+        }
+
         // Pick the family + variant.
-        let family: "F1" | "F2";
+        let family: "F1" | "F2" | "F5";
         let wantedVariant: CovLinkRegistryEntry["mod2_variant"];
         if (caBondOrder === 3) {
             family = "F2";
@@ -124,8 +149,24 @@ export async function detectWarheadFamily(
         } else if (caBondOrder === 1) {
             family = "F1";
             wantedVariant = "post";
+        } else if (isMaleimideRing) {
+            // caBondOrder === 2 AND the maleimide ring signature holds: F5.
+            // preferFamily can still override (user picked F1/F2 from the
+            // dropdown explicitly), but auto-detection picks F5 here.
+            // F3 isn't reachable from this branch (order=2 not order=1).
+            if (preferFamily === "F1") {
+                family = "F1";
+                wantedVariant = "alkene";
+            } else if (preferFamily === "F2") {
+                family = "F2";
+                wantedVariant = "post";
+            } else {
+                family = "F5";
+                wantedVariant = "alkene_ring";
+            }
         } else {
-            // caBondOrder === 2: F2-post vs F1-pre. preferFamily wins; default F2-post.
+            // caBondOrder === 2 and no ring: F2-post vs F1-pre.
+            // preferFamily wins; default F2-post (legacy heuristic).
             family = preferFamily === "F1" ? "F1" : "F2";
             if (family === "F1") {
                 wantedVariant = cbCarbonNeighbors === 0 && cbHasH
@@ -156,6 +197,40 @@ export async function detectWarheadFamily(
         return { entry, atomMap, cbIdx, caIdx };
     }
 
+    // F3 chloroacetamide branch: Cβ is bonded DIRECTLY to the carbonyl-C
+    // (no intervening Cα). The signature is "Cβ has a carbon neighbour
+    // that is itself a carbonyl (=O and -N)". For pre-reaction input we
+    // also expect a Cl neighbour on Cβ; for post-product we just expect
+    // a spare H to delete on the sp3 Cβ.
+    for (const cbN of cbNeighbors) {
+        if (atoms[cbN.idx].element !== "C") continue;
+        if (cbN.order !== 1) continue;
+        const coCandidate = cbN.idx;
+        if (!isAmideCarbonyl(coCandidate, atoms, bonds)) continue;
+
+        // Pre vs post: presence of Cl on Cβ is the distinguishing factor.
+        const cbHasCl = cbNeighbors.some(
+            (n) => atoms[n.idx].element === "Cl"
+        );
+        const wantedVariant: CovLinkRegistryEntry["mod2_variant"] = cbHasCl
+            ? "chloride"
+            : "post";
+
+        const entry = registry.warheads.find(
+            (w) => w.family === "F3" && w.mod2_variant === wantedVariant
+        );
+        if (!entry) continue;
+
+        const atomMap = buildAtomMapF3(lig, atoms, bonds, cbIdx, coCandidate);
+
+        // For the DetectionResult API we still need a caIdx — F3 has no
+        // proper Cα. Return coCandidate's index in its place (the closest
+        // semantic match — it's the carbon "α" to the carbonyl as far as
+        // the warhead's bond graph is concerned). Callers that look at
+        // caIdx for F3-specific logic should use atomMap fields instead.
+        return { entry, atomMap, cbIdx, caIdx: coCandidate };
+    }
+
     return null;
 }
 
@@ -173,16 +248,43 @@ function findCarbonylNeighbor(
     for (const caN of neighborsOf(caIdx, bonds)) {
         if (caN.idx === cbIdx) continue;
         if (atoms[caN.idx].element !== "C") continue;
-        const carbonylNeighbors = neighborsOf(caN.idx, bonds);
-        const hasDoubleO = carbonylNeighbors.some(
-            (m) => atoms[m.idx].element === "O" && m.order === 2
-        );
-        const hasN = carbonylNeighbors.some(
-            (m) => atoms[m.idx].element === "N"
-        );
-        if (hasDoubleO && hasN) {
+        if (isAmideCarbonyl(caN.idx, atoms, bonds)) {
             return caN.idx;
         }
+    }
+    return -1;
+}
+
+/**
+ * Check whether a carbon atom is an amide carbonyl-C — bonded to BOTH a
+ * =O (double-bonded oxygen) and an -N (any nitrogen neighbour). Used by
+ * findCarbonylNeighbor for the F1/F2 walk and by the F3 chloroacetamide
+ * branch where Cβ's carbon neighbour IS the carbonyl (no intermediate Cα).
+ */
+function isAmideCarbonyl(
+    cIdx: number,
+    atoms: LigandAtom[],
+    bonds: LigandBond[]
+): boolean {
+    if (atoms[cIdx]?.element !== "C") return false;
+    const nb = neighborsOf(cIdx, bonds);
+    const hasDoubleO = nb.some((m) => atoms[m.idx].element === "O" && m.order === 2);
+    const hasN = nb.some((m) => atoms[m.idx].element === "N");
+    return hasDoubleO && hasN;
+}
+
+/**
+ * Return the index of the amide-N neighbour of a carbonyl-C, or -1 if
+ * none. Used for F5 maleimide ring-closure detection: the two ring
+ * carbonyls share an amide-N (the ring's central nitrogen).
+ */
+function amideNitrogenOf(
+    cIdx: number,
+    atoms: LigandAtom[],
+    bonds: LigandBond[]
+): number {
+    for (const m of neighborsOf(cIdx, bonds)) {
+        if (atoms[m.idx].element === "N") return m.idx;
     }
     return -1;
 }

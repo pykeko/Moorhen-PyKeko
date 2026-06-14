@@ -1,0 +1,54 @@
+# CYS-MAL-mod2-alkene — alternative mod2 for the maleimide pre-Michael input
+#
+# When the user uploaded a ligand with the maleimide ring C=C still drawn
+# (the free probe / unconjugated form, e.g. simple maleimide
+# C1=CC(=O)N(C1=O)R or any maleimide-bearing fluorescent label /
+# ADC linker), this mod2 REPLACES the default `data_mod_CYS-MAL-mod2`
+# in CYS-MAL.cif. Encodes the Michael-addition chemistry that the
+# bond declaration triggers:
+#
+#   (1) Change Cα=Cβ from double to single bond (the ring stays closed)
+#   (2) Add H on Cα (Michael addition transfers one proton to the
+#       alpha carbon from solvent / active-site water)
+#   (3) Retype Cα and Cβ from sp2 (CR1) to sp3 (CT)
+#   (4) The new SG–Cβ bond is added via the link's bond block (not here)
+#
+# Cβ does NOT lose its H (unlike F1 alkene where Cβ has 2 H's pre, one
+# replaced by S in post). Maleimide Cβ has only 1 H pre, and it stays
+# through the reaction — the sp3 Cβ in 3-thiosuccinimide has S, H,
+# Cα, ring-CO.
+#
+# Selected at runtime when the SMARTS detector matched CYS-MAL-pre
+# (maleimide-bearing ligand).
+#
+# PLACEHOLDER TOKENS substituted at runtime:
+#   <CB>  ← Cβ atom-id (gets the SG)
+#   <CA>  ← Cα atom-id
+#   <HCA> ← H to add on Cα (the Michael-addition proton)
+
+data_mod_CYS-MAL-mod2
+
+# (1) Change Cα=Cβ from double → single (ring stays closed)
+loop_
+_chem_mod_bond.mod_id
+_chem_mod_bond.function
+_chem_mod_bond.atom_id_1
+_chem_mod_bond.atom_id_2
+_chem_mod_bond.new_type
+_chem_mod_bond.new_value_dist
+_chem_mod_bond.new_value_dist_esd
+ CYS-MAL-mod2 change <CB> <CA> single 1.54 0.02
+
+# (2) Add a new H on Cα (the Michael-addition proton)
+# (3) Retype Cα and Cβ from sp2 (CR1) → sp3 (CT)
+loop_
+_chem_mod_atom.mod_id
+_chem_mod_atom.function
+_chem_mod_atom.atom_id
+_chem_mod_atom.new_atom_id
+_chem_mod_atom.new_type_symbol
+_chem_mod_atom.new_type_energy
+_chem_mod_atom.new_partial_charge
+ CYS-MAL-mod2 add    <HCA> <HCA> H HCH1 .
+ CYS-MAL-mod2 change <CA>  .     C CT   .
+ CYS-MAL-mod2 change <CB>  .     C CT   .

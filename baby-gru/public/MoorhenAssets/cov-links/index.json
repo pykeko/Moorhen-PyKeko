@@ -79,6 +79,52 @@
       "mod2_variant": "alkene_terminal",
       "mod2_cif": "CYS-ACR-mod2-alkene.cif",
       "$comment": "Terminal-acrylamide sub-variant (H2C=CHC(=O)N). Same mod2 as CYS-ACR-pre but Cb has 2H pre-reaction, one of which becomes the SG attachment site. The JS detector appends one extra angle restraint at runtime for SG-Cb-H (109.5°, sp3 tetrahedral)."
+    },
+    {
+      "id": "CYS-CAA-post",
+      "family": "F3",
+      "name": "Cys-S to alpha-chloroacetamide post-product (saturated beta-thioether)",
+      "drugs": ["various GSK probes (bound)", "PROTAC linkers (bound)"],
+      "smarts": "[#16][C:1]C(=O)N",
+      "mapping": { "cb": 1 },
+      "link_cif": "CYS-CAA.cif",
+      "mod2_variant": "post",
+      "$comment": "F3 family: SN2 displacement of Cl from -C(=O)-CH2-Cl by Cys-S. Distinguishable from F1-post (sat. thioether) by Cβ being DIRECTLY bonded to the carbonyl-C (no Cα between them). Post-product form has the Cl already gone — ligand was uploaded as the bound state with sp3 -S-CH2-C(=O)-N-."
+    },
+    {
+      "id": "CYS-CAA-pre",
+      "family": "F3",
+      "name": "Cys-S to alpha-chloroacetamide (Cl pre-reaction form)",
+      "drugs": ["various GSK probes (free drug)", "PROTAC linkers (free drug)"],
+      "smarts": "[Cl][C:1]C(=O)N",
+      "mapping": { "cb": 1 },
+      "link_cif": "CYS-CAA.cif",
+      "mod2_variant": "chloride",
+      "mod2_cif": "CYS-CAA-mod2-chloride.cif",
+      "$comment": "Matches the free-drug form: R-N-C(=O)-CH2-Cl. The mod2 deletes Cl and the Cβ-Cl bond (no H added, unlike Michael additions — SN2 just swaps Cl→S without protonation). Triggered when the user pastes a chloroacetamide-bearing SMILES."
+    },
+    {
+      "id": "CYS-MAL-post",
+      "family": "F5",
+      "name": "Cys-S to maleimide post-Michael adduct (3-thiosuccinimide, sat. ring)",
+      "drugs": ["ADC linker conjugates (bound)", "fluorescent label conjugates (bound)"],
+      "smarts": "[#16][C:1]1[C:2]C(=O)N(C1=O)",
+      "mapping": { "cb": 1, "ca": 2 },
+      "link_cif": "CYS-MAL.cif",
+      "mod2_variant": "post",
+      "$comment": "Saturated 3-thiosuccinimide form: Cβ and Cα are both sp3 in the closed 5-ring; the two ring carbonyls share an amide-N. Distinguishable from F1-post by the ring-closure (Cβ has a second carbonyl-C neighbour besides the chain Cα-CO; that second carbonyl shares its amide-N with the Cα-side carbonyl)."
+    },
+    {
+      "id": "CYS-MAL-pre",
+      "family": "F5",
+      "name": "Cys-S to maleimide (ring C=C pre-reaction form)",
+      "drugs": ["maleimide labels (free)", "ADC linkers (free)", "fluorescein-5-maleimide"],
+      "smarts": "[C:1]1=[C:2]C(=O)N(C1=O)",
+      "mapping": { "cb": 1, "ca": 2 },
+      "link_cif": "CYS-MAL.cif",
+      "mod2_variant": "alkene_ring",
+      "mod2_cif": "CYS-MAL-mod2-alkene.cif",
+      "$comment": "Maleimide ring with C=C still drawn (free-probe form). The mod2 transforms ring C=C → C-C single + adds H on Cα + retypes both sp2→sp3. Cβ keeps its single H (unlike F1-pre-terminal where Cβ has 2H pre-reaction). Detected by checking that Cβ's =Cα is bonded to a carbonyl whose amide-N is shared with another carbonyl-C that's a SECOND single-bond neighbour of Cβ (the 5-ring closure)."
     }
   ]
 }

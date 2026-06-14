@@ -1,0 +1,52 @@
+# CYS-CAA-mod2-chloride — alternative mod2 for the chloride pre-reaction input
+#
+# When the user uploaded a ligand with the Cl still drawn (the free
+# drug SMILES form, e.g. ClCC(=O)N1CCN(C1)…), this mod2 REPLACES the
+# default `data_mod_CYS-CAA-mod2` in CYS-CAA.cif. Encodes the SN2
+# substitution chemistry:
+#
+#   (1) Delete the Cl atom and its bond to Cβ
+#   (2) Cβ retypes from "sp3 C with halogen" to "sp3 C with thioether"
+#       — same CT energy type, slightly different partial charge
+#       environment. Coot's bond perception draws this from the atom
+#       type so the visible result is correct without explicit retype.
+#   (3) The new SG-Cβ bond is added via the link's bond block (not here)
+#
+# No H is added on Cβ in this mod — F3 SN2 doesn't add a hydrogen
+# (unlike F1/F2 Michael addition, which transfers a proton to Cα).
+# The Cl just leaves and S takes its place; Cβ keeps its existing 2 H's.
+#
+# Selected at runtime when the SMARTS detector matched CYS-CAA-pre
+# (chloroacetamide-bearing ligand, R-N-C(=O)-CH₂-Cl).
+#
+# PLACEHOLDER TOKENS substituted at runtime:
+#   <CB>  ← attack-site C atom-id (the α-methylene C)
+#   <CL>  ← Cl atom-id to delete
+#
+# References:
+#   ~/Moorhen/docs/covalent-ligand-plan.md §2.3
+#   ~/Moorhen/docs/refs/nicholls-modelling-2021.pdf §3.1 (chem_mod semantics)
+
+data_mod_CYS-CAA-mod2
+
+# (1) Delete the Cβ-Cl bond
+loop_
+_chem_mod_bond.mod_id
+_chem_mod_bond.function
+_chem_mod_bond.atom_id_1
+_chem_mod_bond.atom_id_2
+_chem_mod_bond.new_type
+_chem_mod_bond.new_value_dist
+_chem_mod_bond.new_value_dist_esd
+ CYS-CAA-mod2 delete <CB> <CL> . . .
+
+# (2) Delete the Cl atom itself
+loop_
+_chem_mod_atom.mod_id
+_chem_mod_atom.function
+_chem_mod_atom.atom_id
+_chem_mod_atom.new_atom_id
+_chem_mod_atom.new_type_symbol
+_chem_mod_atom.new_type_energy
+_chem_mod_atom.new_partial_charge
+ CYS-CAA-mod2 delete <CL> . . . .

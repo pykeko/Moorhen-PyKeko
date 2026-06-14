@@ -36,7 +36,7 @@ export interface CovalentPlacementInput {
     ligandDictText: string;
     lig: string;                            // ligand TLC, e.g. "IBR"
     cbAtomName: string;                     // "C1" / "C19" / etc.
-    family: "F1" | "F2";
+    family: "F1" | "F2" | "F3" | "F5";
 }
 
 export interface CovalentPlacementResult {
@@ -48,8 +48,13 @@ export interface CovalentPlacementResult {
     offset: [number, number, number];
 }
 
-/** Canonical post-reaction S–Cβ bond length, by warhead family. */
-function bondLengthForFamily(family: "F1" | "F2"): number {
+/** Canonical post-reaction S–Cβ bond length, by warhead family.
+ *  F2 (vinyl thioether, sp²): 1.78 Å.
+ *  F1 (saturated acrylamide thioether, sp³): 1.81 Å.
+ *  F3 (chloroacetamide SN2 product, sp³): 1.81 Å (same as F1).
+ *  F5 (maleimide 3-thiosuccinimide, sp³): 1.81 Å (same as F1).
+ */
+function bondLengthForFamily(family: "F1" | "F2" | "F3" | "F5"): number {
     return family === "F2" ? 1.78 : 1.81;
 }
 

@@ -182,9 +182,11 @@ const ImportLigandDictionary = (props: {
                             // detector's preferFamily hint matches the warhead
                             // they chose. The registry id format is CYS-XXX-{post|pre|...}.
                             const linkId = covalentLinkIdRef.current;
-                            const family: "F1" | "F2" =
+                            const family: "F1" | "F2" | "F3" | "F5" =
                                 linkId.startsWith("CYS-YNA") ? "F2" :
                                 linkId.startsWith("CYS-ACR") ? "F1" :
+                                linkId.startsWith("CYS-CAA") ? "F3" :
+                                linkId.startsWith("CYS-MAL") ? "F5" :
                                 "F2";
                             // Try each carbon as cbIdx until the detector matches.
                             let detected: any = null;
