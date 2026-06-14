@@ -418,6 +418,7 @@ export function createControlApi(ctx: Ctx) {
         ok: result.ok,
         message: result.message,
         liveDisplayUpdated: result.liveDisplayUpdated ?? false,
+        rsrAwareUpdated: result.rsrAwareUpdated ?? false,
         sgInfo: result.sgInfo ?? null,
         cbInfo: result.cbInfo ?? null,
       };

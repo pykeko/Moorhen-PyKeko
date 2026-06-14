@@ -1015,6 +1015,42 @@ const auto_read_mtz = (mtzData: ArrayBufferLike) => {
     return result
 }
 
+/**
+ * Shim: load refmac-format extra restraints from an in-memory string.
+ *
+ * Why this exists: Coot's `read_extra_restraints` (bound on
+ * molecules_container) takes a file path, not a string. PyKeko v0.2.34
+ * generates extras text inside the covalent-link executor and needs to
+ * hand it to Coot without going through disk. This shim writes the
+ * string to the WASM virtual FS via FS_createDataFile (the same
+ * pattern auto_read_mtz uses), calls read_extra_restraints with the
+ * path, then unlinks the temp file. Returns the count Coot reports
+ * (number of restraint atoms parsed; -1 on parse failure).
+ *
+ * The loaded extras populate molecule_t::extra_restraints, which is
+ * auto-applied at RSR time inside refine_direct() (verified at
+ * coot-1.0/api/coot-molecule.cc:2654 and
+ * coot-1.0/api/molecules-container.cc:3816). No explicit "apply"
+ * call needed — once loaded, RSR honors them.
+ *
+ * Refmac extras format (one record per line, ALL_CAPS keywords):
+ *   EXTE DIST FIRS CHAI A RESI 481 ATOM SG SECO CHAI A RESI 701 ATOM CAA VALU 1.81 SIGM 0.02
+ *   EXTE ANGL FIRS CHAI A RESI 481 ATOM CB SECO CHAI A RESI 481 ATOM SG THIR CHAI A RESI 701 ATOM CAA VALU 100.0 SIGM 3.0
+ *
+ * Each call APPENDS to the molecule's existing extras (Coot's parser
+ * doesn't clear before parsing). Use clear_extra_restraints first if
+ * full replacement is wanted.
+ */
+const shim_load_extra_restraints_string = (imol: number, extrasText: string): number => {
+    const theGuid = guid()
+    const tempFilename = `${theGuid}.txt`
+    const bytes = new TextEncoder().encode(extrasText)
+    cootModule.FS_createDataFile(".", tempFilename, bytes, true, true)
+    const result: number = molecules_container.read_extra_restraints(imol, tempFilename)
+    cootModule.FS_unlink(tempFilename)
+    return result
+}
+
 const replace_map_by_mtz_from_file = (imol: number, mtzData: ArrayBufferLike, selectedColumns: { F: string; PHI: string; }) => {
     const theGuid = guid()
     const tempFilename = `./${theGuid}.mtz`
@@ -1298,6 +1334,9 @@ const doCootCommand = (messageData: {
                 break
             case "shim_export_metaballs_as_mesh_file":
                 cootResult =  export_metaballs_as_mesh_file(...commandArgs as [number, string, number, number, number, string])
+                break
+            case "shim_load_extra_restraints_string":
+                cootResult = shim_load_extra_restraints_string(...commandArgs as [number, string])
                 break
             default:
                 console.log("Calling",command)

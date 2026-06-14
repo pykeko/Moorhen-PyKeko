@@ -88,6 +88,12 @@ export interface CovalentLinkExecuteResult {
     /** Whether the live-display dict-update step ran successfully. False is
      * not a hard failure — the link is still declared, refmacat will work. */
     liveDisplayUpdated?: boolean;
+    /** Whether refmac-format extras were injected into Coot's molecule so
+     * in-app real-space refinement will honor the new S-Cβ bond. False
+     * means RSR won't preserve the bond (atoms can drift apart at
+     * refinement time) — but external refmac via the augmented mmCIF is
+     * unaffected. */
+    rsrAwareUpdated?: boolean;
 }
 
 /**
@@ -242,18 +248,130 @@ export async function executeCovalentLink(
         console.warn(`[covalent] live-display mod2 update failed (non-fatal):`, err);
     }
 
+    // 8. Inject refmac-format extra restraints so Coot's in-app real-space
+    // refinement honors the new S-Cβ bond (and the angles around it).
+    //
+    // Why this is separate from steps 2-5: Coot's gemmi→mmdb importer strips
+    // _struct_conn on entry, so the bond annotation in the augmented mmCIF
+    // never reaches mmdb. And `make_covalent_link_using_cids` (the function
+    // that would otherwise tell Coot's restraints generator about the link)
+    // is the embind silent-drop casualty. The refmac extras mechanism is the
+    // workaround that survives — extras are stored in
+    // coot::molecule_t::extra_restraints and auto-applied at RSR time
+    // (verified at coot-1.0/api/coot-molecule.cc:2654 and
+    // molecules-container.cc:3816). Best-effort: a failure here doesn't
+    // affect the augmented mmCIF / live-display claims.
+    let rsrAwareUpdated = false;
+    try {
+        const extras = buildRefmacExtrasForLink(entry, sg, cb, sgInfo, cbInfo);
+        if (extras.length > 0) {
+            const text = extras.join("\n") + "\n";
+            const resp: any = await commandCentre.current.cootCommand(
+                {
+                    returnType: "status",
+                    command: "shim_load_extra_restraints_string",
+                    commandArgs: [molecule.molNo, text],
+                    changesMolecules: [molecule.molNo],
+                },
+                false
+            );
+            const parsedCount = typeof resp?.data?.result === "number"
+                ? resp.data.result
+                : typeof resp?.result === "number"
+                    ? resp.result
+                    : 0;
+            rsrAwareUpdated = parsedCount > 0;
+            if (!rsrAwareUpdated) {
+                console.warn(`[covalent] shim_load_extra_restraints_string parsed 0 records`);
+            }
+        }
+    } catch (err: any) {
+        console.warn(`[covalent] RSR-aware extras injection failed (non-fatal):`, err);
+    }
+
     return {
         ok: true,
         message:
             `Declared ${linkId}: ${sgInfo.label_comp_id} ${sgInfo.auth_seq_id} ${sg.atom} → ` +
             `${cbInfo.label_comp_id} ${cbInfo.auth_seq_id} ${cb.atom}.` +
             (download ? " Augmented mmCIF downloaded — pass to refmac externally." : "") +
-            (liveDisplayUpdated ? " Bond orders updated in viewer." : ""),
+            (liveDisplayUpdated ? " Bond orders updated in viewer." : "") +
+            (rsrAwareUpdated ? " RSR will honor this bond." : ""),
         augmentedMmcif: augmented,
         sgInfo,
         cbInfo,
         liveDisplayUpdated,
+        rsrAwareUpdated,
     };
+}
+
+/**
+ * Build refmac-format `EXTE DIST` + `EXTE ANGL` lines for a covalent link.
+ * The targets come from the registry entry's family — for now we hard-code
+ * the canonical values per family (1.78 / 1.81 Å for S-Cβ, 100° for
+ * CB-SG-Cβ, 113° for SG-Cβ-Cα). A future v2 could parse the link CIF
+ * itself and emit one EXTE row per restraint defined there, but this
+ * covers what Coot's RSR needs to keep the bond from drifting.
+ *
+ * Refmac extras format reminders:
+ *   - Each EXTE record is one line
+ *   - ALL keywords uppercase
+ *   - CHAI/RESI/ATOM identify the atom; INS is the insertion code (omitted
+ *     when blank — Coot's parser tolerates this)
+ *   - VALU is the target, SIGM the σ
+ *
+ * Atom-spec parsing uses auth_asym_id + auth_seq_id from the model's
+ * mmCIF dump (which is what findAtomInModel already returns).
+ */
+function buildRefmacExtrasForLink(
+    entry: CovLinkRegistryEntry,
+    sg: CidParts,
+    cb: CidParts,
+    sgInfo: { auth_asym_id: string; auth_seq_id: string },
+    cbInfo: { auth_asym_id: string; auth_seq_id: string }
+): string[] {
+    // F2 vinyl thioether is sp2 (1.78 Å); F1/F3/F4/F5/F6 are sp3 (1.81 Å, except F6 at 1.83).
+    const bondLen = entry.family === "F2" ? 1.78 :
+                    entry.family === "F6" ? 1.83 :
+                    1.81;
+    const cbSgCbAngle = entry.family === "F2" ? 104.2 : 100.0;
+    const sgCbCaAngle = entry.family === "F2" ? 120.7 : 113.0;
+
+    // Refmac extras format CRITICAL FIELDS (verified against Coot's parser at
+    // ideal/extra-restraints.cc and Coot's own writer at python/user_define_restraints.py):
+    //   - `INS .` field (insertion code) after each RESI is required by the parser's
+    //     optional-but-positional handling — omit and the parser drops the line.
+    //   - `TYPE N` field at the end IS REQUIRED (not optional). Without it
+    //     `read_refmac_extra_restraints` returns -1 for the line. Type 1 = standard bond.
+    //   - Keywords are prefix-matched at 4 chars (FIRS/FIRST, SECO/SECOND, VALU/VALUE,
+    //     SIGM/SIGMA), so either short or long form works; we use FIRST/SECOND/VALUE/SIGMA
+    //     to match Coot's own writer output.
+    const lines: string[] = [
+        // S-Cβ bond
+        `EXTE DIST FIRST CHAIN ${sgInfo.auth_asym_id} RESI ${sgInfo.auth_seq_id} INS . ATOM ${sg.atom} ` +
+        `SECOND CHAIN ${cbInfo.auth_asym_id} RESI ${cbInfo.auth_seq_id} INS . ATOM ${cb.atom} ` +
+        `VALUE ${bondLen.toFixed(2)} SIGMA 0.02 TYPE 1`,
+        // CB(Cys)-SG-Cβ(lig) angle
+        `EXTE ANGL FIRST CHAIN ${sgInfo.auth_asym_id} RESI ${sgInfo.auth_seq_id} INS . ATOM CB ` +
+        `SECOND CHAIN ${sgInfo.auth_asym_id} RESI ${sgInfo.auth_seq_id} INS . ATOM ${sg.atom} ` +
+        `THIRD CHAIN ${cbInfo.auth_asym_id} RESI ${cbInfo.auth_seq_id} INS . ATOM ${cb.atom} ` +
+        `VALUE ${cbSgCbAngle.toFixed(1)} SIGMA 3.0 TYPE 1`,
+    ];
+
+    // SG-Cβ-Cα angle, only when Cα is meaningful for this family. F3
+    // chloroacetamide has no separate Cα (Cβ is bonded directly to the
+    // carbonyl-C); for F6 reversible carbonyl there's no Cα either. We
+    // emit the angle only when the family's link CIF defines a Cα-side
+    // angle, which is true for F1, F2, F4, F5.
+    // The Cα atom name we don't directly have here — but the detector
+    // already resolved it inside the executor as detected.atomMap.ca.
+    // We don't thread that into buildRefmacExtrasForLink for the v1 path
+    // — instead we infer from the family and emit a placeholder that the
+    // shim can ignore if the atom isn't found.
+    // For v0.2.34 keep just the bond + Cys-side angle. Cα-side angle is
+    // a polish addition (the bond restraint alone is the load-bearing
+    // piece for keeping the atoms together during RSR).
+    return lines;
 }
 
 /**
