@@ -285,10 +285,11 @@ export async function executeCovalentLink(
             const pdbText: string = pdbResp?.data?.result?.result || pdbResp?.data?.result || "";
             if (pdbText && pdbText.length > 100) {
                 // Inject the LINK record (same one mmdbLinkInjected uses).
+                const chemLinkId = linkCifText.match(/^_chem_link\.id\s+(\S+)/m)?.[1] || "LINK";
                 const linkRecord = buildLinkRecord(
                     sgInfo.auth_asym_id, sgInfo.auth_seq_id, sgInfo.label_comp_id, sg.atom,
                     cbInfo.auth_asym_id, cbInfo.auth_seq_id, cbInfo.label_comp_id, cb.atom,
-                    bondLengthForLinkEntry(entry)
+                    bondLengthForLinkEntry(entry), chemLinkId
                 );
                 const pdbLines = pdbText.split("\n");
                 const firstAtomIdx = pdbLines.findIndex(L => L.startsWith("ATOM") || L.startsWith("HETATM"));
@@ -613,26 +614,60 @@ function toRefmacReadyLinkCif(linkCifText: string): string {
 }
 
 /**
- * Build a PDB v3.3 LINK record with the given atoms + bond length.
- * Columns: 1-6 "LINK  ", 13-16 name1, 18-20 resName1, 22 chainID1,
- * 23-26 resSeq1, 43-46 name2, 48-50 resName2, 52 chainID2, 53-56 resSeq2,
- * 74-78 length. Symop fields (60-65, 67-72) left as "1555 ".
+ * Build a PDB v3.3 LINK record with the given atoms + bond length, then
+ * append the link_id (refmac's LINKR extension — required for refmac to
+ * match the LINK to a chem_link template in the dictionary).
+ *
+ * Column positions (1-indexed, per PDB v3.3 spec):
+ *   1-6   record name "LINK  "
+ *   13-16 name1 (atom name)
+ *   17    altLoc1
+ *   18-20 resName1
+ *   22    chainID1
+ *   23-26 resSeq1
+ *   27    iCode1
+ *   43-46 name2
+ *   47    altLoc2
+ *   48-50 resName2
+ *   52    chainID2
+ *   53-56 resSeq2
+ *   57    iCode2
+ *   60-65 sym1
+ *   67-72 sym2
+ *   74-78 length (Real(5.2))
+ *   80+   link_id (refmac extension; whitespace-delimited)
+ *
+ * Cross-checked against 8FD9.pdb (deposited covalent ibrutinib).
  */
 function buildLinkRecord(
     chain1: string, resi1: string, comp1: string, atom1: string,
     chain2: string, resi2: string, comp2: string, atom2: string,
-    length: number
+    length: number, linkId?: string
 ): string {
-    // Atom name: chars 13-16, left-padded for ≤3-char names, right-padded.
-    // PDB convention: 1-char alignment for elements (C, N, O...) in col 14.
+    // Atom name: PDB column-aligned. For ≤3-char names: " <name padded>".
     const padAtom = (n: string) => n.length >= 4 ? n.slice(0, 4) : ` ${n.padEnd(3, " ")}`;
-    const padInt = (s: string, w: number) => String(s).padStart(w, " ");
-    let line = "LINK        " +
-        padAtom(atom1) + " " + comp1.padStart(3, " ") + " " + chain1 + padInt(resi1, 4) + " ".padEnd(15, " ") +
-        padAtom(atom2) + " " + comp2.padStart(3, " ") + " " + chain2 + padInt(resi2, 4) + "                ";
-    // Truncate / extend to col 72 then add symops + length
-    line = line.padEnd(59, " ");
-    line += "1555  1555 " + length.toFixed(2).padStart(5, " ");
+    const cols: string[] = new Array(82).fill(" ");
+    const setRange = (start: number, end: number, value: string) => {
+        const v = value.slice(0, end - start + 1);
+        for (let i = 0; i < v.length; i++) cols[start - 1 + i] = v[i];
+    };
+    setRange(1, 6, "LINK  ");
+    setRange(13, 16, padAtom(atom1));
+    setRange(18, 20, comp1.padStart(3, " "));
+    setRange(22, 22, chain1);
+    setRange(23, 26, String(resi1).padStart(4, " "));
+    setRange(43, 46, padAtom(atom2));
+    setRange(48, 50, comp2.padStart(3, " "));
+    setRange(52, 52, chain2);
+    setRange(53, 56, String(resi2).padStart(4, " "));
+    setRange(60, 65, "1555  ");
+    setRange(67, 72, "1555  ");
+    setRange(74, 78, length.toFixed(2).padStart(5, " "));
+    let line = cols.join("");
+    if (linkId) {
+        // refmac LINKR-style: link_id appended whitespace-delimited after col 80
+        line = line.replace(/\s+$/, "") + "  " + linkId;
+    }
     return line;
 }
 
