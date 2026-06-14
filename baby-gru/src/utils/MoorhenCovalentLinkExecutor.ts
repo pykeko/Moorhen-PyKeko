@@ -98,6 +98,14 @@ export interface CovalentLinkExecuteResult {
      * (PyKeko desktop only — null in browser builds). The browser-download
      * still fires either way when `download: true`. */
     savedCifPath?: string | null;
+    /** Absolute path of the substituted link dictionary CIF, saved
+     * alongside savedCifPath. Pass as LIBIN to refmac5. Null in browser
+     * builds or when the model save failed. */
+    savedLinkCifPath?: string | null;
+    /** Absolute path of the model written as PDB (with LINK record)
+     * alongside the mmCIF. Refmac5 prefers this — gemmi's mmCIF atom_id
+     * column padding ('` N1 `' instead of `N1`) confuses refmac. */
+    savedModelPdbPath?: string | null;
     /** Whether the in-memory model was reloaded from the augmented mmCIF
      * (so mmdb's LINK list contains the new bond). False means refine
      * still sees SG↔Cβ as a non-bonded pair and VdW will resist
@@ -227,9 +235,12 @@ export async function executeCovalentLink(
     // export, the browser download is a no-op duplicate in Electron (the
     // download chrome opens to confirm); harmless.
     let savedCifPath: string | null = null;
+    let savedLinkCifPath: string | null = null;
+    const safeBase = (molecule.name || "model").replace(/[^A-Za-z0-9_.-]/g, "_");
     const safeName = downloadName
         ? downloadName.replace(/[^A-Za-z0-9_.-]/g, "_")
-        : `${(molecule.name || "model").replace(/[^A-Za-z0-9_.-]/g, "_")}_covalent_${linkId}.cif`;
+        : `${safeBase}_covalent_${linkId}.cif`;
+    const linkCifName = `${safeBase}_link_${linkId}.cif`;
     const ctrl: any = (typeof window !== "undefined") ? (window as any).__moorhenControl : null;
     if (ctrl?.saveAugmentedCif) {
         try {
@@ -241,6 +252,57 @@ export async function executeCovalentLink(
             }
         } catch (err: any) {
             console.warn(`[covalent] saveAugmentedCif threw:`, err);
+        }
+    }
+    // Also save the substituted link CIF in the same dir so refmac5 has
+    // LIBIN available without the user having to construct it. Transform
+    // to CCP4-style format first (add data_link_list / data_mod_list
+    // catalog blocks + inject link_id column into _chem_link_<X> loops).
+    if (ctrl?.saveTextFile && savedCifPath && linkCifText) {
+        try {
+            const sep = savedCifPath.includes("\\") ? "\\" : "/";
+            const dir = savedCifPath.substring(0, savedCifPath.lastIndexOf(sep));
+            const refmacCif = toRefmacReadyLinkCif(linkCifText);
+            const r = await ctrl.saveTextFile(refmacCif, linkCifName, dir);
+            if (r?.ok && r?.path) {
+                savedLinkCifPath = r.path;
+            }
+        } catch (err: any) {
+            console.warn(`[covalent] saveTextFile(link) threw:`, err);
+        }
+    }
+    // Also save the model as PDB next to the mmCIF, because gemmi writes
+    // mmCIF atom_id values with quoted column padding (`' SG '`) that
+    // refmac5 doesn't strip — refmac reports 0 atoms in the input file.
+    // PDB column-aligned atom names are unambiguous.
+    let savedModelPdbPath: string | null = null;
+    if (ctrl?.saveTextFile && savedCifPath) {
+        try {
+            const pdbResp: any = await commandCentre.current.cootCommand(
+                { returnType: "string", command: "molecule_to_PDB_string", commandArgs: [molecule.molNo] },
+                false
+            );
+            const pdbText: string = pdbResp?.data?.result?.result || pdbResp?.data?.result || "";
+            if (pdbText && pdbText.length > 100) {
+                // Inject the LINK record (same one mmdbLinkInjected uses).
+                const linkRecord = buildLinkRecord(
+                    sgInfo.auth_asym_id, sgInfo.auth_seq_id, sgInfo.label_comp_id, sg.atom,
+                    cbInfo.auth_asym_id, cbInfo.auth_seq_id, cbInfo.label_comp_id, cb.atom,
+                    bondLengthForLinkEntry(entry)
+                );
+                const pdbLines = pdbText.split("\n");
+                const firstAtomIdx = pdbLines.findIndex(L => L.startsWith("ATOM") || L.startsWith("HETATM"));
+                pdbLines.splice(firstAtomIdx > 0 ? firstAtomIdx : 1, 0, linkRecord);
+                const sep = savedCifPath.includes("\\") ? "\\" : "/";
+                const dir = savedCifPath.substring(0, savedCifPath.lastIndexOf(sep));
+                const pdbName = safeName.replace(/\.cif$/i, ".pdb");
+                const r = await ctrl.saveTextFile(pdbLines.join("\n"), pdbName, dir);
+                if (r?.ok && r?.path) {
+                    savedModelPdbPath = r.path;
+                }
+            }
+        } catch (err: any) {
+            console.warn(`[covalent] saveTextFile(pdb) threw:`, err);
         }
     }
     if (download && !savedCifPath) {
@@ -392,6 +454,8 @@ export async function executeCovalentLink(
             (rsrAwareUpdated ? " RSR will honor this bond." : ""),
         augmentedMmcif: augmented,
         savedCifPath,
+        savedLinkCifPath,
+        savedModelPdbPath,
         mmdbLinkInjected,
         sgInfo,
         cbInfo,
@@ -423,6 +487,129 @@ function bondLengthForLinkEntry(entry: CovLinkRegistryEntry): number {
     return entry.family === "F2" ? 1.78 :
            entry.family === "F6" ? 1.83 :
            1.81;
+}
+
+/**
+ * Transform our hand-authored link CIF text into refmac-loadable form.
+ *
+ * Our source CIFs use the "minimal" CCP4 link format — just `data_link_<id>`
+ * with key-value `_chem_link.X` properties + `_chem_link_bond/angle/...`
+ * loops keyed by atom_1_comp_id only (positional 1/2). That matches Coot's
+ * read_dictionary_string just fine but refmac5 needs the full format:
+ *
+ *   1. Catalog blocks at the top — `data_link_list` (loop_ of all links)
+ *      and `data_mod_list` (loop_ of all mods). Without these, refmac
+ *      doesn't know the link exists for purposes of matching against
+ *      _struct_conn / LINK records.
+ *   2. Every `_chem_link_<X>` and `_chem_mod_<X>` loop_ must include a
+ *      leading link_id/mod_id column so refmac knows which entity each
+ *      row belongs to. Our sources omit it (consistent with Coot's
+ *      accept-anything parser).
+ *
+ * This function reads the substituted link CIF, extracts the link metadata,
+ * prepends the two catalog blocks, and rewrites every `_chem_link_<X>`
+ * loop to include a `link_id` column (and `_chem_mod_<X>` loops to include
+ * a `mod_id` column, if absent). Returns the refmac-ready text.
+ */
+function toRefmacReadyLinkCif(linkCifText: string): string {
+    // Extract link-level metadata from the data_link_<id> block.
+    const linkIdMatch = linkCifText.match(/^_chem_link\.id\s+(\S+)/m);
+    const linkId = linkIdMatch?.[1];
+    if (!linkId) {
+        console.warn("[covalent] toRefmacReadyLinkCif: no _chem_link.id; returning unmodified");
+        return linkCifText;
+    }
+    const linkName = (linkCifText.match(/^_chem_link\.name\s+"?([^"\n]+?)"?\s*$/m)?.[1] || linkId).trim();
+    const compId1 = linkCifText.match(/^_chem_link\.comp_id_1\s+(\S+)/m)?.[1] || ".";
+    const modId1 = linkCifText.match(/^_chem_link\.mod_id_1\s+(\S+)/m)?.[1] || ".";
+    const groupComp1 = linkCifText.match(/^_chem_link\.group_comp_1\s+(\S+)/m)?.[1] || ".";
+    const compId2 = linkCifText.match(/^_chem_link\.comp_id_2\s+(\S+)/m)?.[1] || ".";
+    const modId2 = linkCifText.match(/^_chem_link\.mod_id_2\s+(\S+)/m)?.[1] || ".";
+    const groupComp2 = linkCifText.match(/^_chem_link\.group_comp_2\s+(\S+)/m)?.[1] || ".";
+
+    // Build the two catalog blocks.
+    const linkListBlock =
+        "data_link_list\n" +
+        "loop_\n" +
+        "_chem_link.id\n" +
+        "_chem_link.comp_id_1\n" +
+        "_chem_link.mod_id_1\n" +
+        "_chem_link.group_comp_1\n" +
+        "_chem_link.comp_id_2\n" +
+        "_chem_link.mod_id_2\n" +
+        "_chem_link.group_comp_2\n" +
+        "_chem_link.name\n" +
+        `${linkId} ${compId1} ${modId1} ${groupComp1} ${compId2} ${modId2} ${groupComp2} "${linkName}"\n`;
+
+    const modListBlock =
+        "\ndata_mod_list\n" +
+        "loop_\n" +
+        "_chem_mod.id\n" +
+        "_chem_mod.name\n" +
+        "_chem_mod.comp_id\n" +
+        "_chem_mod.group_id\n" +
+        `${modId1} "${linkId}-side1" ${compId1} ${groupComp1}\n` +
+        `${modId2} "${linkId}-side2" ${compId2} ${groupComp2}\n`;
+
+    // Rewrite each loop_ that has _chem_link_<X> headers to inject the
+    // link_id column. We do this by walking lines, detecting a loop_
+    // header chain of _chem_link_<X>.<field>, prepending _chem_link_<X>.link_id
+    // to the headers, and prepending the linkId to each data row of that
+    // loop until the next loop_/data_/keyword is hit.
+    const lines = linkCifText.split("\n");
+    const out: string[] = [];
+    let i = 0;
+    while (i < lines.length) {
+        const L = lines[i];
+        // Look for loop_ followed by a chem_link_<X> column header.
+        if (L.trim() === "loop_") {
+            // Peek ahead to see if this loop is _chem_link_X or _chem_mod_X
+            let j = i + 1;
+            const headers: string[] = [];
+            while (j < lines.length && /^\s*_(chem_link_|chem_mod_)/.test(lines[j])) {
+                headers.push(lines[j].trim());
+                j++;
+            }
+            if (headers.length === 0) {
+                out.push(L); i++; continue;
+            }
+            // What kind of loop?
+            const isLink = headers[0].startsWith("_chem_link_");
+            const isMod = headers[0].startsWith("_chem_mod_");
+            const cat = headers[0].split(".")[0]; // e.g. "_chem_link_bond"
+            const idField = isLink ? `${cat}.link_id` : `${cat}.mod_id`;
+            const idValue = isLink ? linkId : null; // mod loops already have mod_id as first column
+
+            // For link loops: inject the link_id header if not already present
+            const hasIdHeader = headers.some(h => h === idField);
+            out.push(L); // loop_
+            if (isLink && !hasIdHeader) {
+                out.push(idField);
+            }
+            for (const h of headers) out.push(h);
+            i = j;
+            // Now process data rows until blank line / loop_ / data_ / keyword
+            while (i < lines.length) {
+                const row = lines[i];
+                const t = row.trim();
+                if (t === "" || t.startsWith("#") || t === "loop_" || t.startsWith("data_") || t.startsWith("_")) {
+                    break;
+                }
+                // Prepend link_id if it's a link loop and we just added the header
+                if (isLink && !hasIdHeader && idValue) {
+                    out.push(`${idValue} ${row.trim()}`);
+                } else {
+                    out.push(row);
+                }
+                i++;
+            }
+            continue;
+        }
+        out.push(L);
+        i++;
+    }
+
+    return linkListBlock + modListBlock + "\n" + out.join("\n");
 }
 
 /**

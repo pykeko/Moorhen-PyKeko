@@ -421,9 +421,46 @@ export function createControlApi(ctx: Ctx) {
         rsrAwareUpdated: result.rsrAwareUpdated ?? false,
         mmdbLinkInjected: result.mmdbLinkInjected ?? false,
         savedCifPath: result.savedCifPath ?? null,
+        savedLinkCifPath: result.savedLinkCifPath ?? null,
+        savedModelPdbPath: result.savedModelPdbPath ?? null,
         sgInfo: result.sgInfo ?? null,
         cbInfo: result.cbInfo ?? null,
       };
+    },
+
+    /**
+     * Spawn refmac5 to refine a covalent-linked model against the user's
+     * MTZ. Desktop-only (uses the __moorhenControl IPC bridge). Returns
+     * the refined model paths plus the (tail of) refmac log.
+     *
+     * Typical use: after declareCovalentLink, take savedCifPath +
+     * savedLinkCifPath, ask the user for their MTZ, call this. The
+     * refined PDB lands in the same directory; load it back into Moorhen
+     * via loadCoordsFromBytes (or just open the PDB) if the user wants
+     * to inspect.
+     *
+     * If refmac5 is not installed, returns { ok: false, notInstalled: true }.
+     */
+    async runRefmacat(modelCifPath: string, mtzPath: string,
+                      linkCifPath?: string | null, nCycles?: number, outDir?: string) {
+      const ctrl: any = (typeof window !== "undefined") ? (window as any).__moorhenControl : null;
+      if (!ctrl?.runRefmacat) {
+        return { ok: false, error: "refmacat IPC bridge unavailable (not running in PyKeko desktop?)" };
+      }
+      return await ctrl.runRefmacat(modelCifPath, mtzPath, linkCifPath ?? null, nCycles ?? 5, outDir ?? null);
+    },
+
+    /**
+     * Native MTZ file picker (desktop only). Convenience wrapper for the
+     * refmacat flow — pairs with runRefmacat above. Returns
+     * { ok, path } | { canceled } | { ok: false, error }.
+     */
+    async pickMtzFile() {
+      const ctrl: any = (typeof window !== "undefined") ? (window as any).__moorhenControl : null;
+      if (!ctrl?.pickMtzFile) {
+        return { ok: false, error: "pickMtzFile IPC bridge unavailable" };
+      }
+      return await ctrl.pickMtzFile();
     },
   };
 

@@ -47,6 +47,12 @@ const LinkPanel = (props: {
     const [busy, setBusy] = useState(false);
     const [status, setStatus] = useState("");
     const [statusKind, setStatusKind] = useState<"info" | "error" | "success">("info");
+    // Set after a successful declare so the "Refine with REFMAC5…" button
+    // knows what paths to pass refmac5. Null until the bond is declared.
+    const [savedModelCif, setSavedModelCif] = useState<string | null>(null);
+    const [savedLinkCif, setSavedLinkCif] = useState<string | null>(null);
+    const [savedModelPdb, setSavedModelPdb] = useState<string | null>(null);
+    const [refmacBusy, setRefmacBusy] = useState(false);
     // v0.2.30 dropdown auto-prefilter: once the user has picked or typed a Cβ
     // CID, we run the detector against the ligand's chem_comp dict and stash
     // the detected entry id here. The dropdown then auto-selects it and
@@ -233,13 +239,85 @@ const LinkPanel = (props: {
             setStatus(result.message);
             setStatusKind("success");
             setBusy(false);
-            setTimeout(() => setShowOverlay(false), 3500);
+            // Keep the panel open so the user can click "Refine with REFMAC5…".
+            // If the IPC bridge isn't available (browser build), or the model
+            // didn't save, fall back to auto-dismiss after a few seconds.
+            if (result.savedCifPath) {
+                setSavedModelCif(result.savedCifPath);
+                setSavedLinkCif(result.savedLinkCifPath ?? null);
+                setSavedModelPdb(result.savedModelPdbPath ?? null);
+            } else {
+                setTimeout(() => setShowOverlay(false), 3500);
+            }
         } catch (e: any) {
             setStatus(`Failed: ${e?.message || String(e)}`);
             setStatusKind("error");
             setBusy(false);
         }
     }, [cbCid, linkId, sgCid, registry, urlPrefix, commandCentre, molecule.molNo, molecule.name, setShowOverlay]);
+
+    // Spawn refmac5 against the just-saved augmented mmCIF + a user-picked
+    // MTZ. Loads the refined model back into Moorhen on success.
+    const runRefmac = useCallback(async () => {
+        if (!savedModelCif) return;
+        const api: any = (typeof window !== "undefined") ? (window as any).MoorhenControlApi : null;
+        if (!api?.pickMtzFile || !api?.runRefmacat) {
+            setStatus("REFMAC5 spawn requires PyKeko desktop build");
+            setStatusKind("error");
+            return;
+        }
+        try {
+            setRefmacBusy(true);
+            setStatus("Pick your MTZ…");
+            setStatusKind("info");
+            const picked = await api.pickMtzFile();
+            if (picked?.canceled) {
+                setStatus("Cancelled — pick an MTZ to refine");
+                setStatusKind("info");
+                setRefmacBusy(false);
+                return;
+            }
+            if (!picked?.ok || !picked?.path) {
+                setStatus(`MTZ picker failed: ${picked?.error || "no path"}`);
+                setStatusKind("error");
+                setRefmacBusy(false);
+                return;
+            }
+            setStatus("Running REFMAC5 (this may take a minute)…");
+            // Prefer PDB for XYZIN — refmac doesn't strip gemmi's quoted
+            // column-padded atom_id in mmCIF.
+            const xyzin = savedModelPdb || savedModelCif;
+            const res = await api.runRefmacat(xyzin, picked.path, savedLinkCif || null, 5);
+            if (!res?.ok) {
+                if (res?.notInstalled) {
+                    setStatus("REFMAC5 not found — install CCP4 or set REFMAC5_BIN");
+                } else {
+                    setStatus(`REFMAC5 failed: ${res?.error || "unknown"}`);
+                }
+                setStatusKind("error");
+                setRefmacBusy(false);
+                return;
+            }
+            // Load the refined PDB back into Moorhen.
+            if (res.refinedPdb && api.loadCoordsFromURL) {
+                try {
+                    await api.loadCoordsFromURL(
+                        "file://" + res.refinedPdb,
+                        `refined_${linkId}`
+                    );
+                } catch (e: any) {
+                    console.warn("[covalent] refined-model reload failed:", e);
+                }
+            }
+            setStatus(`Refined: ${res.refinedPdb}`);
+            setStatusKind("success");
+            setRefmacBusy(false);
+        } catch (e: any) {
+            setStatus(`REFMAC5 spawn error: ${e?.message || e}`);
+            setStatusKind("error");
+            setRefmacBusy(false);
+        }
+    }, [savedModelCif, savedModelPdb, savedLinkCif, linkId]);
 
     const statusColor = statusKind === "error" ? "#e03131" : statusKind === "success" ? "#2f9e44" : "#495057";
 
@@ -363,9 +441,32 @@ const LinkPanel = (props: {
                         if (picking) resumeClickAwayListener();
                         setShowOverlay(false);
                     }}
-                    disabled={busy}
-                >Cancel</button>
+                    disabled={busy || refmacBusy}
+                >{savedModelCif ? "Close" : "Cancel"}</button>
             </div>
+            {savedModelCif && (
+                <div style={{
+                    marginTop: 10, padding: "8px 10px", background: "#f1f3f5",
+                    borderRadius: 6, fontSize: "0.85rem",
+                }}>
+                    <div style={{ marginBottom: 6, color: "#495057" }}>
+                        Augmented CIF saved. Refine against your data MTZ to pull
+                        SG↔Cβ to canonical distance:
+                    </div>
+                    <button
+                        style={{
+                            padding: "6px 12px", fontSize: "0.9rem",
+                            background: refmacBusy ? "#adb5bd" : "#51cf66",
+                            color: "white", border: "none", borderRadius: 5,
+                            cursor: refmacBusy ? "not-allowed" : "pointer",
+                        }}
+                        onClick={runRefmac}
+                        disabled={refmacBusy}
+                    >
+                        {refmacBusy ? "Running REFMAC5…" : "Refine with REFMAC5…"}
+                    </button>
+                </div>
+            )}
             {status && (
                 <div style={{ marginTop: 10, fontSize: "0.85rem", color: statusColor }}>{status}</div>
             )}
