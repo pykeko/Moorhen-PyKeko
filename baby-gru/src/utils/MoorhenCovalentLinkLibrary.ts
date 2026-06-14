@@ -325,6 +325,39 @@ export function buildAtomMap(
         (i) => i !== cgIdx && atoms[i].element === "H"
     );
 
+    // Derive a guaranteed-unique name for the H atom we'd ADD on Cα
+    // during a pre-reaction (alkyne / alkene) mod2 substitution. The
+    // conventional starting candidate is "H<n>" where <n> is the numeric
+    // suffix of Cα's name (e.g. C13 → H13, matching the ligand's H-naming
+    // pattern). If that name already exists in the dict — common for any
+    // ligand with multiple H's near Cα — fall through to H<n>A, H<n>B, …
+    // and finally H<n>0, H<n>1, … as a guaranteed-not-clashing tail.
+    // The fix matters because pk-v0.2.29 shipped buildAtomMap WITHOUT this
+    // — hca came back undefined, the mod2 CIF's <HCA> placeholder stayed
+    // unsubstituted, and the dict-applier failed to add the Michael-
+    // addition proton (silent failure: bond order flipped fine, but the
+    // sp3 Cα was left with the wrong valence).
+    const existingNames = new Set(atoms.map((a) => a.name));
+    const caName = atoms[caIdx].name;
+    const caNumMatch = caName.match(/^[A-Za-z]+(\d+)/);
+    const caNum = caNumMatch ? caNumMatch[1] : "";
+    let hcaName: string | undefined;
+    const candidates: string[] = [];
+    if (caNum) candidates.push(`H${caNum}`);
+    for (const suffix of "ABCDEFGHIJK") {
+        if (caNum) candidates.push(`H${caNum}${suffix}`);
+    }
+    for (let i = 0; i < 100; i++) {
+        if (caNum) candidates.push(`H${caNum}_${i}`);
+        else candidates.push(`HCA_${i}`);
+    }
+    for (const cand of candidates) {
+        if (!existingNames.has(cand)) {
+            hcaName = cand;
+            break;
+        }
+    }
+
     return {
         lig,
         cb: atoms[cbIdx].name,
@@ -334,5 +367,6 @@ export function buildAtomMap(
         n: atoms[nIdx].name,
         o: atoms[oIdx].name,
         hcb: hcbIdx !== undefined ? atoms[hcbIdx].name : undefined,
+        hca: hcaName,
     };
 }

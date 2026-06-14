@@ -14,6 +14,9 @@ import { MoorhenMolecule } from "../../utils/MoorhenMolecule";
 import { centreOnGemmiAtoms, cidToSpec } from "../../utils/utils";
 import { usePauseClickAwayListener } from "../../hooks/pauseClickAwayListener";
 import { executeCovalentLink } from "../../utils/MoorhenCovalentLinkExecutor";
+import { parseChemCompFromDict } from "../../utils/MoorhenCovalentLinkDictParser";
+import { detectWarheadFamily } from "../../utils/MoorhenCovalentLinkDetector";
+import { seedCovalentPlacement } from "../../utils/MoorhenCovalentPlacement";
 import { MoorhenButton, MoorhenFileInput, MoorhenSelect, MoorhenTextInput, MoorhenToggle } from "../inputs";
 import { MoorhenMoleculeSelect } from "../inputs";
 import { MoorhenInfoCard, MoorhenStack } from "../interface-base";
@@ -149,6 +152,66 @@ const ImportLigandDictionary = (props: {
                         placementWorld = [pickedPeak.x, pickedPeak.y, pickedPeak.z];
                     } else {
                         dispatch(enqueueSnackbar({ message: "No Fo-Fc peak found (need a difference map loaded with positive density above the threshold); falling back to the active molecule's centre.", variant: "warning" }));
+                    }
+                }
+                // PyKeko v0.2.30: covalent placement geometry seed. When the
+                // user enabled "Form covalent bond to Cys SG" in the SMILES
+                // dialog, we override placement so the ligand's Cβ atom lands
+                // on the (Cys-CB → SG) axis extended by the canonical S-Cβ
+                // bond length (1.78 Å F2, 1.81 Å F1). Skipped if any required
+                // lookup fails (returns null) — caller falls back to the
+                // standard "Place at..." behaviour. Done HERE, not after
+                // get_monomer_and_position_at, because the placement target
+                // is what determines where the centroid lands; pre-offsetting
+                // by the dict's internal (centroid - Cβ) offset means one call.
+                if (covalentModeRef?.current && covalentSgCidRef?.current?.trim() && covalentLinkIdRef?.current) {
+                    try {
+                        // The selected protein molecule (for SG world coords).
+                        // moleculeSelectValueRef tells us the user's "Make
+                        // monomer available to" pick — the same molecule the
+                        // ligand will be merged into.
+                        const pickedMolNoStr = moleculeSelectValueRef.current;
+                        const pickedMolNo = pickedMolNoStr ? parseInt(pickedMolNoStr) : NaN;
+                        const proteinMol = Number.isFinite(pickedMolNo)
+                            ? molecules.find((m: any) => m.molNo === pickedMolNo)
+                            : (molecules.find((m: any) => (m as any).atomCount > 0) ?? molecules[0]);
+                        // Parse the dict + run detector to find Cβ atom name.
+                        const graph = parseChemCompFromDict(fileContent, instanceName);
+                        if (proteinMol && graph) {
+                            // Pull family from the user's selected linkId so the
+                            // detector's preferFamily hint matches the warhead
+                            // they chose. The registry id format is CYS-XXX-{post|pre|...}.
+                            const linkId = covalentLinkIdRef.current;
+                            const family: "F1" | "F2" =
+                                linkId.startsWith("CYS-YNA") ? "F2" :
+                                linkId.startsWith("CYS-ACR") ? "F1" :
+                                "F2";
+                            // Try each carbon as cbIdx until the detector matches.
+                            let detected: any = null;
+                            for (let i = 0; i < graph.atoms.length; i++) {
+                                if (graph.atoms[i].element !== "C") continue;
+                                const d = await detectWarheadFamily(
+                                    instanceName, graph.atoms, graph.bonds, i, family
+                                );
+                                if (d) { detected = d; break; }
+                            }
+                            if (detected) {
+                                const seed = await seedCovalentPlacement({
+                                    proteinMolecule: proteinMol,
+                                    sgCid: covalentSgCidRef.current.trim(),
+                                    ligandDictText: fileContent,
+                                    lig: instanceName,
+                                    cbAtomName: detected.atomMap.cb,
+                                    family,
+                                });
+                                if (seed) {
+                                    placementWorld = seed.placement;
+                                    console.log(`[smiles-covalent] seeded placement: ligand Cβ (${detected.atomMap.cb}) targeted at (${seed.targetCb.map((v: number) => v.toFixed(2)).join(",")}); centroid placement (${seed.placement.map((v: number) => v.toFixed(2)).join(",")})`);
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.warn("[smiles-covalent] placement seed failed (non-fatal):", e);
                     }
                 }
                 const result = (await commandCentre.current.cootCommand(

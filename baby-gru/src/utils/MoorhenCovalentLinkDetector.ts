@@ -60,10 +60,12 @@ const neighborsOf = (
  *          on success
  *
  * Note: pre-v2 had an `amidePlane` parameter that fed a now-deleted
- * <AMIDE_PLANE> placeholder substitution. The v2 link CIF scopes its plane
- * narrowly to {SG, Cβ, Cα, Cγ} so it no longer overlaps the ligand's amide
- * plane — the parameter is no longer needed (see AceDRG cross-validation
- * comparison at docs/.../acedrg-cys-xqq/COMPARISON.md).
+ * <AMIDE_PLANE> placeholder substitution. Confirmed via grep on
+ * 2026-06-14 that both F2 (CYS-YNA.cif) and F1 (CYS-ACR.cif) link CIFs
+ * scope their plane / restraint sets narrowly enough that they no
+ * longer overlap the ligand's amide plane — no in-template references
+ * to <AMIDE_PLANE> remain. The parameter is gone for good (see AceDRG
+ * cross-validation comparison at docs/.../acedrg-cys-xqq/COMPARISON.md).
  */
 export async function detectWarheadFamily(
     lig: string,

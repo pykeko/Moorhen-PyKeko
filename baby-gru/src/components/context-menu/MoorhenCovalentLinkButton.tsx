@@ -20,6 +20,9 @@ import { usePauseClickAwayListener } from "../../hooks/pauseClickAwayListener";
 import { moorhen } from "../../types/moorhen";
 import { MoorhenContextButtonBase, ContextButtonProps } from "./MoorhenContextButtonBase";
 import { executeCovalentLink } from "../../utils/MoorhenCovalentLinkExecutor";
+import { parseChemCompFromDict } from "../../utils/MoorhenCovalentLinkDictParser";
+import { detectWarheadFamily } from "../../utils/MoorhenCovalentLinkDetector";
+import { parseCid, findAtomInModel } from "../../utils/MoorhenCovalentLinkSurgery";
 import { cidToSpec } from "../../utils/utils";
 
 interface LinkRegistryItem {
@@ -44,6 +47,12 @@ const LinkPanel = (props: {
     const [busy, setBusy] = useState(false);
     const [status, setStatus] = useState("");
     const [statusKind, setStatusKind] = useState<"info" | "error" | "success">("info");
+    // v0.2.30 dropdown auto-prefilter: once the user has picked or typed a Cβ
+    // CID, we run the detector against the ligand's chem_comp dict and stash
+    // the detected entry id here. The dropdown then auto-selects it and
+    // de-emphasises the entries from the OTHER family (still selectable so
+    // the user can override).
+    const [detectedEntryId, setDetectedEntryId] = useState<string | null>(null);
     // The popover's MoorhenClickAwayListener listens on "click", so the browser-
     // synthesized click that follows the canvas mousedown gets routed to the
     // listener AFTER atomClicked has fired — but the listener doesn't know that
@@ -131,6 +140,65 @@ const LinkPanel = (props: {
             document.removeEventListener("atomClicked", onAtomClicked);
         };
     }, [picking, resumeClickAwayListener]);
+
+    // v0.2.30: when the user picks/types a Cβ CID and the registry is loaded,
+    // run the detector to pre-select the matching warhead-template entry.
+    // Skipped when the user already manually picked a different entry (we
+    // check `linkId` against the last detected entry to detect manual override).
+    const lastDetectedRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (!cbCid.trim() || registry.length === 0) return;
+        const cb = parseCid(cbCid.trim());
+        if (!cb) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                // Export model + find the residue containing the picked atom
+                // so we have the ligand TLC (label_comp_id).
+                const modelResp: any = await commandCentre.current.cootCommand({
+                    returnType: "string",
+                    command: "molecule_to_mmCIF_string_with_gemmi",
+                    commandArgs: [molecule.molNo],
+                } as any, false);
+                const modelMmcif: string = modelResp?.data?.result?.result || "";
+                if (!modelMmcif) return;
+                const cbInfo = findAtomInModel(modelMmcif, cb);
+                if (!cbInfo) return;
+                const tlc = cbInfo.label_comp_id;
+                if (!tlc) return;
+                const dict = (molecule as any).ligandDicts?.[tlc];
+                if (!dict) return;
+                const graph = parseChemCompFromDict(dict, tlc);
+                if (!graph) return;
+                const cbIdx = graph.atoms.findIndex((a) => a.name === cb.atom);
+                if (cbIdx < 0) return;
+                // Try detector without family hint first; if it matches, use that.
+                // Otherwise try F1 hint (covers the order-2 ambiguity case).
+                let detected = await detectWarheadFamily(tlc, graph.atoms, graph.bonds, cbIdx);
+                if (!detected) {
+                    detected = await detectWarheadFamily(tlc, graph.atoms, graph.bonds, cbIdx, "F1");
+                }
+                if (cancelled || !detected) return;
+                const detectedId = detected.entry.id;
+                setDetectedEntryId(detectedId);
+                // Auto-select unless the user already manually picked a
+                // different entry SINCE the last detection ran (i.e. the
+                // current linkId was set by the user, not by us).
+                const manuallyOverridden = lastDetectedRef.current !== null
+                    && linkId !== lastDetectedRef.current
+                    && linkId !== "";
+                if (!manuallyOverridden) {
+                    setLinkId(detectedId);
+                }
+                lastDetectedRef.current = detectedId;
+            } catch (e) {
+                // Detection is best-effort — log and let the user pick manually.
+                console.warn("[covalent] auto-detect failed:", e);
+            }
+        })();
+        return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [cbCid, registry.length, molecule, commandCentre]);
 
     const submit = useCallback(async () => {
         if (!cbCid.trim() || !linkId) return;
@@ -240,7 +308,14 @@ const LinkPanel = (props: {
                 </div>
             </div>
             <div style={{ marginBottom: 12 }}>
-                <label style={{ display: "block", fontSize: "0.85rem", color: "#495057" }}>Link template</label>
+                <label style={{ display: "block", fontSize: "0.85rem", color: "#495057" }}>
+                    Link template
+                    {detectedEntryId && (
+                        <span style={{ marginLeft: 6, color: "#2f9e44", fontSize: "0.75rem" }}>
+                            (auto-detected: {detectedEntryId})
+                        </span>
+                    )}
+                </label>
                 <select
                     style={{ width: "100%", padding: "6px 8px", fontSize: "0.95rem" }}
                     value={linkId}
@@ -248,9 +323,22 @@ const LinkPanel = (props: {
                     disabled={busy || registry.length === 0}
                 >
                     {registry.length === 0 && <option value="">(loading registry…)</option>}
-                    {registry.map((r) => (
-                        <option key={r.id} value={r.id}>{r.id} — {r.family} — {r.name}</option>
-                    ))}
+                    {registry.map((r) => {
+                        // De-emphasise entries from the OTHER warhead family
+                        // once we've auto-detected one. Still selectable, just
+                        // visually demoted so the user sees the recommended
+                        // entry first.
+                        const detectedFamily = detectedEntryId
+                            ? registry.find((e) => e.id === detectedEntryId)?.family
+                            : null;
+                        const dim = detectedFamily && r.family !== detectedFamily;
+                        return (
+                            <option key={r.id} value={r.id}
+                                style={dim ? { color: "#adb5bd" } : undefined}>
+                                {r.id} — {r.family} — {r.name}
+                            </option>
+                        );
+                    })}
                 </select>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
