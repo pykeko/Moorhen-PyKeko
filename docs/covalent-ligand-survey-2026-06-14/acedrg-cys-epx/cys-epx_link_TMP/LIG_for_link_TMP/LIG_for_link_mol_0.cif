@@ -1,0 +1,99 @@
+global_
+_lib_name         ?
+_lib_version      ?
+_lib_update       ?
+# ------------------------------------------------
+#
+# ---   LIST OF MONOMERS ---
+#
+data_comp_list
+loop_
+_chem_comp.id
+_chem_comp.three_letter_code
+_chem_comp.name
+_chem_comp.group
+_chem_comp.number_atoms_all
+_chem_comp.number_atoms_nh
+_chem_comp.desc_level
+LIG       LIG        '.             '        non-polymer       22     11   .
+# ------------------------------------------------------
+# ------------------------------------------------------
+#
+# --- DESCRIPTION OF MONOMERS ---
+#
+data_comp_LIG
+#
+loop_
+_chem_comp_atom.comp_id
+_chem_comp_atom.atom_id
+_chem_comp_atom.alt_atom_id
+_chem_comp_atom.type_symbol
+_chem_comp_atom.type_energy
+_chem_comp_atom.charge
+_chem_comp_atom.x
+_chem_comp_atom.y
+_chem_comp_atom.z
+_chem_comp_atom.pdbx_leaving_atom_flag
+LIG         N1      N1      N     N     1.00   -3.2234    0.6877     0.0696      N
+LIG         C2      C2      C     C     0.00   -2.0990    0.0917     -0.6609      N
+LIG         C3      C3      C     C     0.00   -2.4687    -1.2874     -1.1424      N
+LIG         O4      O4      O     O     0.00   -2.4510    -1.5535     -2.3731      N
+LIG         C5      C5      C     C     0.00   -0.8445    0.0423     0.2280      N
+LIG         S6      S6      S     S     0.00   0.6150    -0.4934     -0.7316      N
+LIG         O7      O7      O     O     -1.00   -2.8297    -2.2747     -0.2332      N
+LIG         C14      C14      C     C     0.00   3.6023    0.3554     -0.9838      N
+LIG         C15      C15      C     C     0.00   3.1587    0.0311     0.4425      N
+LIG         C16      C16      C     C     0.00   1.7540    -0.3862     0.6938      N
+LIG         O17      O17      O     O     0.00   2.1848    0.9400     0.9042      N
+LIG         H8      H8      H     H     0.00   -2.9887    1.6703     0.3411      N
+LIG         H9      H9      H     H     0.00   -4.0714    0.7122     -0.5428      N
+LIG         H10      H10      H     H     0.00   -3.4378    0.1362     0.9328      N
+LIG         H11      H11      H     H     0.00   -1.8743    0.7345     -1.5429      N
+LIG         H12      H12      H     H     0.00   -1.0063    -0.6516     1.0815      N
+LIG         H13      H13      H     H     0.00   -0.6435    1.0568     0.6348      N
+LIG         H18      H18      H     H     0.00   2.8977    1.0468     -1.4943      N
+LIG         H19      H19      H     H     0.00   4.5993    0.8415     -0.9511      N
+LIG         H20      H20      H     H     0.00   3.6852    -0.5846     -1.5681      N
+LIG         H21      H21      H     H     0.00   3.9101    -0.2095     1.2235      N
+LIG         H22      H22      H     H     0.00   1.5314    -0.9058     1.6492      N
+#
+_chem_comp_bond.comp_id
+_chem_comp_bond.atom_id_1
+_chem_comp_bond.atom_id_2
+_chem_comp_bond.type
+_chem_comp_bond.aromatic
+_chem_comp_bond.value_dist
+_chem_comp_bond.value_dist_esd
+LIG       N1       C2       SINGLE      n     1.4674     0.2000
+LIG       C2       C3       SINGLE      n     1.5068     0.2000
+LIG       C2       C5       SINGLE      n     1.5383     0.2000
+LIG       C3       O4       DOUBLE      n     1.2592     0.2000
+LIG       C3       O7       SINGLE      n     1.3899     0.2000
+LIG       C5       S6       SINGLE      n     1.8270     0.2000
+LIG       C14       C15       SINGLE      n     1.5286     0.2000
+LIG       C15       C16       SINGLE      n     1.4868     0.2000
+LIG       C16       O17       SINGLE      n     1.4102     0.2000
+LIG       C15       O17       SINGLE      n     1.4098     0.2000
+LIG       S6       C16       SINGLE      n     1.8277     0.2000
+LIG       N1       H8       SINGLE      n     1.0461     0.2000
+LIG       N1       H9       SINGLE      n     1.0463     0.2000
+LIG       N1       H10       SINGLE      n     1.0465     0.2000
+LIG       C2       H11       SINGLE      n     1.1143     0.2000
+LIG       C5       H12       SINGLE      n     1.1119     0.2000
+LIG       C5       H13       SINGLE      n     1.1113     0.2000
+LIG       C14       H18       SINGLE      n     1.1113     0.2000
+LIG       C14       H19       SINGLE      n     1.1097     0.2000
+LIG       C14       H20       SINGLE      n     1.1099     0.2000
+LIG       C15       H21       SINGLE      n     1.1101     0.2000
+LIG       C16       H22       SINGLE      n     1.1101     0.2000
+#
+_chem_comp_chir.comp_id
+_chem_comp_chir.id
+_chem_comp_chir.atom_id_centre
+_chem_comp_chir.atom_id_1
+_chem_comp_chir.atom_id_2
+_chem_comp_chir.atom_id_3
+_chem_comp_chir.volume_sign
+LIG     chir_1  C2      N1      C5      C3      negative
+LIG     chir_2  C15     O17     C16     C14     negative
+LIG         chir_3      C16         S6          O17         C15         positive

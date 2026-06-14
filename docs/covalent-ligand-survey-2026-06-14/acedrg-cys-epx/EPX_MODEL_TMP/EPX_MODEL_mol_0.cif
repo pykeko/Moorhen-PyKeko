@@ -1,0 +1,73 @@
+global_
+_lib_name         ?
+_lib_version      ?
+_lib_update       ?
+# ------------------------------------------------
+#
+# ---   LIST OF MONOMERS ---
+#
+data_comp_list
+loop_
+_chem_comp.id
+_chem_comp.three_letter_code
+_chem_comp.name
+_chem_comp.group
+_chem_comp.number_atoms_all
+_chem_comp.number_atoms_nh
+_chem_comp.desc_level
+EPX       EPX        '.             '        non-polymer       10     4   .
+# ------------------------------------------------------
+# ------------------------------------------------------
+#
+# --- DESCRIPTION OF MONOMERS ---
+#
+data_comp_EPX
+#
+loop_
+_chem_comp_atom.comp_id
+_chem_comp_atom.atom_id
+_chem_comp_atom.alt_atom_id
+_chem_comp_atom.type_symbol
+_chem_comp_atom.type_energy
+_chem_comp_atom.charge
+_chem_comp_atom.x
+_chem_comp_atom.y
+_chem_comp_atom.z
+_chem_comp_atom.pdbx_leaving_atom_flag
+EPX         C1      C1      C     C     0.00   -1.2131    0.2435     -0.0407      N
+EPX         C2      C2      C     C     0.00   0.0662    -0.5867     -0.0216      N
+EPX         C3      C3      C     C     0.00   1.3414    0.1609     -0.0821      N
+EPX         O1      O1      O     O     0.00   0.8323    -0.3418     1.1335      N
+EPX         H1      H1      H     H     0.00   -2.0157    -0.3117     0.4876      N
+EPX         H2      H2      H     H     0.00   -1.0780    1.2291     0.4558      N
+EPX         H3      H3      H     H     0.00   -1.5256    0.4090     -1.0925      N
+EPX         H4      H4      H     H     0.00   0.0696    -1.6573     -0.3154      N
+EPX         H5      H5      H     H     0.00   2.2303    -0.4151     -0.4133      N
+EPX         H6      H6      H     H     0.00   1.2925    1.2700     -0.1114      N
+#
+_chem_comp_bond.comp_id
+_chem_comp_bond.atom_id_1
+_chem_comp_bond.atom_id_2
+_chem_comp_bond.type
+_chem_comp_bond.aromatic
+_chem_comp_bond.value_dist
+_chem_comp_bond.value_dist_esd
+EPX       C1       C2       SINGLE      n     1.5252     0.2000
+EPX       C2       C3       SINGLE      n     1.4795     0.2000
+EPX       C3       O1       SINGLE      n     1.4105     0.2000
+EPX       O1       C2       SINGLE      n     1.4076     0.2000
+EPX       C1       H1       SINGLE      n     1.1097     0.2000
+EPX       C1       H2       SINGLE      n     1.1118     0.2000
+EPX       C1       H3       SINGLE      n     1.1097     0.2000
+EPX       C2       H4       SINGLE      n     1.1102     0.2000
+EPX       C3       H5       SINGLE      n     1.1097     0.2000
+EPX       C3       H6       SINGLE      n     1.1106     0.2000
+#
+_chem_comp_chir.comp_id
+_chem_comp_chir.id
+_chem_comp_chir.atom_id_centre
+_chem_comp_chir.atom_id_1
+_chem_comp_chir.atom_id_2
+_chem_comp_chir.atom_id_3
+_chem_comp_chir.volume_sign
+EPX         chir_1      C2          O1          C3          C1          negative

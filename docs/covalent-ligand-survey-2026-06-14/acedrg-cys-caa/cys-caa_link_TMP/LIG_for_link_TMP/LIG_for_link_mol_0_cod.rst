@@ -1,0 +1,216 @@
+global_
+_lib_name         ?
+_lib_version      ?
+_lib_update       ?
+# ------------------------------------------------
+#
+# ---   LIST OF MONOMERS ---
+#
+data_comp_list
+loop_
+_chem_comp.id
+_chem_comp.three_letter_code
+_chem_comp.name
+_chem_comp.group
+_chem_comp.number_atoms_all
+_chem_comp.number_atoms_nh
+_chem_comp.desc_level
+LIG	LIG	'.		'	non-polymer	24	12	.
+# ------------------------------------------------------
+# ------------------------------------------------------
+#
+# --- DESCRIPTION OF MONOMERS ---
+#
+data_comp_LIG
+#
+_chem_comp.pdbx_type        HETAIN
+loop_
+_chem_comp_atom.comp_id
+_chem_comp_atom.atom_id
+_chem_comp_atom.alt_atom_id
+_chem_comp_atom.type_symbol
+_chem_comp_atom.type_energy
+_chem_comp_atom.charge
+_chem_comp_atom.x
+_chem_comp_atom.y
+_chem_comp_atom.z
+_chem_comp_atom.pdbx_model_Cartn_x_ideal
+_chem_comp_atom.pdbx_model_Cartn_y_ideal
+_chem_comp_atom.pdbx_model_Cartn_z_ideal
+_chem_comp_atom.pdbx_leaving_atom_flag
+LIG          N1          N1     N   NT3       1      -3.214      -0.329      -0.509      -3.214      -0.329      -0.509     N
+LIG          C2          C2     C   CH1       0      -2.426      -0.568       0.708      -2.426      -0.568       0.708     N
+LIG          C3          C3     C     C       0      -1.826       0.710       1.236      -1.826       0.710       1.236     N
+LIG          O4          O4     O     O       0      -1.421       1.606       0.449      -1.421       1.606       0.449     N
+LIG          C5          C5     C   CH2       0      -1.348      -1.648       0.486      -1.348      -1.648       0.486     N
+LIG          S6          S6     S    S2       0      -0.117      -1.176      -0.791      -0.117      -1.176      -0.791     N
+LIG          O7          O7     O    OC      -1      -1.667       0.881       2.606      -1.667       0.881       2.606     N
+LIG         C14         C14     C   CH2       0       1.240      -0.798       0.368       1.240      -0.798       0.368     N
+LIG         C15         C15     C     C       0       2.387      -0.213      -0.390       2.387      -0.213      -0.390     N
+LIG         O16         O16     O     O       0       3.344      -0.955      -0.742       3.344      -0.955      -0.742     N
+LIG         N17         N17     N   NH1       0       2.377       1.174      -0.750       2.377       1.174      -0.750     N
+LIG         C18         C18     C   CH3       0       3.466       1.779      -1.506       3.466       1.779      -1.506     N
+LIG          H8          H8     H     H       0      -2.617       0.051      -1.279      -2.617       0.051      -1.279     N
+LIG          H9          H9     H     H       0      -3.653      -1.223      -0.828      -3.653      -1.223      -0.828     N
+LIG         H10         H10     H     H       0      -3.978       0.355      -0.303      -3.978       0.355      -0.303     N
+LIG         H11         H11     H     H       0      -3.116      -0.955       1.491      -3.116      -0.955       1.491     N
+LIG         H12         H12     H     H       0      -0.854      -1.887       1.453      -0.854      -1.887       1.453     N
+LIG         H13         H13     H     H       0      -1.842      -2.583       0.146      -1.842      -2.583       0.146     N
+LIG         H19         H19     H     H       0       1.560      -1.732       0.879       1.560      -1.732       0.879     N
+LIG         H20         H20     H     H       0       0.901      -0.073       1.136       0.901      -0.073       1.136     N
+LIG         H21         H21     H     H       0       1.566       1.770      -0.469       1.566       1.770      -0.469     N
+LIG         H22         H22     H     H       0       3.568       1.274      -2.489       3.568       1.274      -2.489     N
+LIG         H23         H23     H     H       0       3.254       2.856      -1.675       3.254       2.856      -1.675     N
+LIG         H24         H24     H     H       0       4.416       1.684      -0.938       4.416       1.684      -0.938     N
+loop_
+_chem_comp_acedrg.comp_id
+_chem_comp_acedrg.atom_id
+_chem_comp_acedrg.atom_type
+LIG        N1    N(CCCH)(H)3
+LIG        C2    C(CHHS)(NH3)(COO)(H)
+LIG        C3    C(CCHN)(O)2
+LIG        O4    O(CCO)
+LIG        C5    C(CCHN)(SC)(H)2
+LIG        S6    S(CCHH)2
+LIG        O7    O(CCO)
+LIG       C14    C(CNO)(SC)(H)2
+LIG       C15    C(CHHS)(NCH)(O)
+LIG       O16    O(CCN)
+LIG       N17    N(CH3)(CCO)(H)
+LIG       C18    C(NCH)(H)3
+LIG        H8    H(NCHH)
+LIG        H9    H(NCHH)
+LIG       H10    H(NCHH)
+LIG       H11    H(CCCN)
+LIG       H12    H(CCHS)
+LIG       H13    H(CCHS)
+LIG       H19    H(CCHS)
+LIG       H20    H(CCHS)
+LIG       H21    H(NCC)
+LIG       H22    H(CHHN)
+LIG       H23    H(CHHN)
+LIG       H24    H(CHHN)
+loop_
+_chem_comp_bond.comp_id
+_chem_comp_bond.atom_id_1
+_chem_comp_bond.atom_id_2
+_chem_comp_bond.value_order
+_chem_comp_bond.pdbx_aromatic_flag
+_chem_comp_bond.value_dist_nucleus
+_chem_comp_bond.value_dist_nucleus_esd
+_chem_comp_bond.value_dist
+_chem_comp_bond.value_dist_esd
+LIG          N1          C2      SINGLE       n     1.487  0.0100     1.487  0.0100
+LIG          C2          C3      SINGLE       n     1.538  0.0113     1.538  0.0113
+LIG          C2          C5      SINGLE       n     1.524  0.0100     1.524  0.0100
+LIG          C3          O4      DOUBLE       n     1.251  0.0183     1.251  0.0183
+LIG          C3          O7      SINGLE       n     1.251  0.0183     1.251  0.0183
+LIG          C5          S6      SINGLE       n     1.810  0.0100     1.810  0.0100
+LIG         C14         C15      SINGLE       n     1.508  0.0119     1.508  0.0119
+LIG         C15         O16      DOUBLE       n     1.229  0.0200     1.229  0.0200
+LIG         C15         N17      SINGLE       n     1.330  0.0100     1.330  0.0100
+LIG         N17         C18      SINGLE       n     1.451  0.0100     1.451  0.0100
+LIG          S6         C14      SINGLE       n     1.812  0.0154     1.812  0.0154
+LIG          N1          H8      SINGLE       n     1.018  0.0520     0.902  0.0102
+LIG          N1          H9      SINGLE       n     1.018  0.0520     0.902  0.0102
+LIG          N1         H10      SINGLE       n     1.018  0.0520     0.902  0.0102
+LIG          C2         H11      SINGLE       n     1.092  0.0100     0.991  0.0200
+LIG          C5         H12      SINGLE       n     1.092  0.0100     0.980  0.0104
+LIG          C5         H13      SINGLE       n     1.092  0.0100     0.980  0.0104
+LIG         C14         H19      SINGLE       n     1.092  0.0100     0.961  0.0200
+LIG         C14         H20      SINGLE       n     1.092  0.0100     0.961  0.0200
+LIG         N17         H21      SINGLE       n     1.013  0.0120     0.871  0.0200
+LIG         C18         H22      SINGLE       n     1.092  0.0100     0.970  0.0200
+LIG         C18         H23      SINGLE       n     1.092  0.0100     0.970  0.0200
+LIG         C18         H24      SINGLE       n     1.092  0.0100     0.970  0.0200
+loop_
+_chem_comp_angle.comp_id
+_chem_comp_angle.atom_id_1
+_chem_comp_angle.atom_id_2
+_chem_comp_angle.atom_id_3
+_chem_comp_angle.value_angle
+_chem_comp_angle.value_angle_esd
+LIG          C2          N1          H8     109.684    2.12
+LIG          C2          N1          H9     109.684    2.12
+LIG          C2          N1         H10     109.684    2.12
+LIG          H8          N1          H9     109.032    3.00
+LIG          H8          N1         H10     109.032    3.00
+LIG          H9          N1         H10     109.032    3.00
+LIG          N1          C2          C3     109.504    1.50
+LIG          N1          C2          C5     109.354    2.20
+LIG          N1          C2         H11     107.886    1.50
+LIG          C3          C2          C5     110.419    3.00
+LIG          C3          C2         H11     108.362    1.50
+LIG          C5          C2         H11     109.209    1.50
+LIG          C2          C3          O4     117.126    1.50
+LIG          C2          C3          O7     117.126    1.50
+LIG          O4          C3          O7     125.747    1.50
+LIG          C2          C5          S6     115.917    1.50
+LIG          C2          C5         H12     108.537    1.50
+LIG          C2          C5         H13     108.537    1.50
+LIG          S6          C5         H12     108.158    1.50
+LIG          S6          C5         H13     108.158    1.50
+LIG         H12          C5         H13     107.737    1.50
+LIG          C5          S6         C14     101.754    1.50
+LIG         C15         C14          S6     110.151    1.50
+LIG         C15         C14         H19     109.395    1.50
+LIG         C15         C14         H20     109.395    1.50
+LIG          S6         C14         H19     108.185    1.50
+LIG          S6         C14         H20     108.185    1.50
+LIG         H19         C14         H20     108.561    3.00
+LIG         C14         C15         O16     121.086    1.50
+LIG         C14         C15         N17     115.981    1.50
+LIG         O16         C15         N17     122.933    1.64
+LIG         C15         N17         C18     122.252    1.50
+LIG         C15         N17         H21     118.985    3.00
+LIG         C18         N17         H21     118.763    3.00
+LIG         N17         C18         H22     109.501    1.50
+LIG         N17         C18         H23     109.501    1.50
+LIG         N17         C18         H24     109.501    1.50
+LIG         H22         C18         H23     109.325    3.00
+LIG         H22         C18         H24     109.325    3.00
+LIG         H23         C18         H24     109.325    3.00
+loop_
+_chem_comp_tor.comp_id
+_chem_comp_tor.id
+_chem_comp_tor.atom_id_1
+_chem_comp_tor.atom_id_2
+_chem_comp_tor.atom_id_3
+_chem_comp_tor.atom_id_4
+_chem_comp_tor.value_angle
+_chem_comp_tor.value_angle_esd
+_chem_comp_tor.period
+LIG             sp3_sp3_1          C3          C2          N1          H8     180.000    10.0     3
+LIG             sp2_sp3_1         C15         N17         C18         H22       0.000    20.0     6
+LIG             sp2_sp3_2          O4          C3          C2          N1       0.000    20.0     6
+LIG             sp3_sp3_2          N1          C2          C5          S6     180.000    10.0     3
+LIG             sp3_sp3_3          C2          C5          S6         C14     180.000    10.0     3
+LIG             sp3_sp3_4         C15         C14          S6          C5     180.000    10.0     3
+LIG             sp2_sp3_3         O16         C15         C14          S6     120.000    20.0     6
+LIG             sp2_sp2_1         C14         C15         N17         C18     180.000     5.0     2
+loop_
+_chem_comp_chir.comp_id
+_chem_comp_chir.id
+_chem_comp_chir.atom_id_centre
+_chem_comp_chir.atom_id_1
+_chem_comp_chir.atom_id_2
+_chem_comp_chir.atom_id_3
+_chem_comp_chir.volume_sign
+LIG    chir_1    C2    N1    C5    C3    negative
+loop_
+_chem_comp_plane_atom.comp_id
+_chem_comp_plane_atom.plane_id
+_chem_comp_plane_atom.atom_id
+_chem_comp_plane_atom.dist_esd
+LIG    plan-1          C2   0.020
+LIG    plan-1          C3   0.020
+LIG    plan-1          O4   0.020
+LIG    plan-1          O7   0.020
+LIG    plan-2         C14   0.020
+LIG    plan-2         C15   0.020
+LIG    plan-2         N17   0.020
+LIG    plan-2         O16   0.020
+LIG    plan-3         C15   0.020
+LIG    plan-3         C18   0.020
+LIG    plan-3         H21   0.020
+LIG    plan-3         N17   0.020

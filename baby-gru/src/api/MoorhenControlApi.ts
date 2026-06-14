@@ -12,6 +12,7 @@ import { MoorhenMap } from "../utils/MoorhenMap";
 import { MoorhenScriptApi } from "../utils/MoorhenScriptAPI";
 import { MoorhenTimeCapsule } from "../utils/MoorhenTimeCapsule";
 import { moorhensession } from "../protobuf/MoorhenSession";
+import { executeCovalentLink } from "../utils/MoorhenCovalentLinkExecutor";
 import { addMolecule, showMolecule } from "../store/moleculesSlice";
 import { addMap } from "../store/mapsSlice";
 import { setActiveMap } from "../store/generalStatesSlice";
@@ -370,6 +371,56 @@ export function createControlApi(ctx: Ctx) {
       await api.exe(script);
       repaint();
       return { ok: true };
+    },
+    /** Declare a covalent link between a Cys SG atom and a ligand carbon
+     * (Cβ) via the v0.2.29+ executor pipeline. Loads the link CIF into
+     * Coot's dictionary, exports the model as augmented mmCIF with a new
+     * `_struct_conn` row, optionally triggers a browser download of that
+     * augmented mmCIF, and applies the mod2 to the in-viewer ligand chem_comp
+     * for live bond-order update.
+     *
+     * @param sgCid Short-form CID of the Cys SG (e.g. "//A/481/SG")
+     * @param cbCid Short-form CID of the ligand Cβ (e.g. "//A/801/C19")
+     * @param linkId Registry entry id from cov-links/index.json
+     *               (e.g. "CYS-ACR-pre-terminal")
+     * @param molNo Optional; defaults to the active/first molecule
+     * @param download Whether to trigger the browser download (default true)
+     */
+    async declareCovalentLink(sgCid: string, cbCid: string, linkId: string, molNo?: number, download = true) {
+      const mols = getMolecules();
+      const molecule = molNo !== undefined
+        ? mols.find((m: any) => m.molNo === molNo)
+        : mols[0];
+      if (!molecule) {
+        return { ok: false, message: `No molecule found (molNo=${molNo ?? "default"})` };
+      }
+      // Family hint mirrors the SMILES dialog and the right-click button.
+      const preferFamily =
+        linkId.startsWith("CYS-YNA") ? "F2" :
+        linkId.startsWith("CYS-ACR") ? "F1" :
+        linkId.startsWith("CYS-CAA") ? "F3" :
+        linkId.startsWith("CYS-EPX") ? "F4" :
+        linkId.startsWith("CYS-MAL") ? "F5" :
+        linkId.startsWith("CYS-RVC") ? "F6" :
+        undefined;
+      const result = await executeCovalentLink({
+        molecule,
+        sgCid,
+        cbCid,
+        linkId,
+        preferFamily,
+        urlPrefix: "MoorhenAssets",
+        commandCentre,
+        download,
+      });
+      repaint();
+      return {
+        ok: result.ok,
+        message: result.message,
+        liveDisplayUpdated: result.liveDisplayUpdated ?? false,
+        sgInfo: result.sgInfo ?? null,
+        cbInfo: result.cbInfo ?? null,
+      };
     },
   };
 
