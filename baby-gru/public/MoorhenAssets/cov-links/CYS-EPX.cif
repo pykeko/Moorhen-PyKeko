@@ -1,0 +1,139 @@
+# CYS-EPX — Cys-S to epoxide ring-opening adduct (β-hydroxy thioether)
+#
+# Hand-authored link CIF for PyKeko covalent-ligand workflow.
+# Family F4 of the plan-doc taxonomy: covers epoxide-warhead probes —
+# epoxysuccinyl Cys protease inhibitors (E-64 family), terminal-
+# epoxide tool compounds, and the small but important set of clinical
+# drugs that use epoxide as the Cys-reactive group (carfilzomib's
+# epoxyketone is a related but distinct family — F6 reversible
+# carbonyl, not F4).
+#
+# Mechanism:
+#   Cys-S⁻ attacks one of the strained 3-ring carbons (typically the
+#   less hindered Cβ); ring opens; the O ends up as -OH on Cα.
+#
+#       O                       OH
+#      / \\                       |
+#   Cα - Cβ    +  Cys-S⁻  →   Cα - Cβ - S-Cys
+#                              (still sp³,
+#                               strain gone)
+#
+# Geometric differences vs F1/F3/F5 (other sp3 thioether linkages):
+#   * No amide carbonyl in scope — the epoxide warhead has no -C(=O)-N
+#     in immediate connectivity (the rest of the drug body may have
+#     amides, but they're not in the link CIF's scope).
+#   * Cα carries a new -OH after ring opening (the H comes from
+#     solvent during the opening). This is the only F-family where
+#     the chemistry creates a new heteroatom-H bond on Cα.
+#   * sp3 Cα and sp3 Cβ retain their hybridisation through the
+#     reaction — ring strain (~25 kcal/mol) is released but the
+#     atoms don't change typing.
+#
+# PLACEHOLDER TOKENS substituted at runtime:
+#   <LIG> ← ligand 3-letter (or 5-char) CCD code
+#   <CB>  ← Cβ atom-id (the attacked ring C; gets the SG)
+#   <CA>  ← Cα atom-id (the other ring C; keeps the O as -OH)
+#   <OE>  ← epoxide O atom-id (the ring O; ends up as Cα's hydroxyl)
+#   <HOE> ← H to add on the epoxide O (the ring-opening proton from
+#            solvent — becomes the hydroxyl H)
+#   <HCB> ← H to delete on Cβ (post-product input only)
+#
+# References:
+#   ~/Moorhen/docs/refs/nicholls-modelling-2021.pdf — CCP4-ML link-CIF format
+#   ~/Moorhen/docs/covalent-ligand-plan.md §2.4 (F4 epoxide family)
+
+data_link_CYS-EPX
+_chem_link.id                CYS-EPX
+_chem_link.name              "Cys-S to epoxide ring-opening adduct (beta-hydroxy thioether)"
+_chem_link.comp_id_1         CYS
+_chem_link.mod_id_1          CYS-EPX-mod1
+_chem_link.group_comp_1      L-peptide
+_chem_link.comp_id_2         <LIG>
+_chem_link.mod_id_2          CYS-EPX-mod2
+_chem_link.group_comp_2      non-polymer
+
+# ---- bonds: new S-Cβ single bond (sp3 S to sp3 C) ----
+loop_
+_chem_link_bond.atom_1_comp_id
+_chem_link_bond.atom_id_1
+_chem_link_bond.atom_2_comp_id
+_chem_link_bond.atom_id_2
+_chem_link_bond.type
+_chem_link_bond.value_dist
+_chem_link_bond.value_dist_esd
+ 1 SG    2 <CB>   single 1.81 0.02
+
+# ---- angles around the new sp3 linkage ----
+# Cys side: standard sp3 thioether range.
+# Ligand side: SG-Cβ-Cα 110° (sp3 tetrahedral; the Cβ in the opened
+# β-hydroxy thioether has S, Cα, R₁, R₂ — all four substituents).
+loop_
+_chem_link_angle.atom_1_comp_id
+_chem_link_angle.atom_id_1
+_chem_link_angle.atom_2_comp_id
+_chem_link_angle.atom_id_2
+_chem_link_angle.atom_3_comp_id
+_chem_link_angle.atom_id_3
+_chem_link_angle.value_angle
+_chem_link_angle.value_angle_esd
+ 1 CB    1 SG    2 <CB>   100.0   3.0
+ 1 SG    2 <CB>  2 <CA>   110.0   2.0
+
+# ---- soft torsions ----
+# Two sp3-sp3 hinges (Cys-side + thioether). The Cβ-Cα bond now
+# rotates freely (ring strain is gone). Period=3 for all.
+loop_
+_chem_link_tor.id
+_chem_link_tor.atom_1_comp_id
+_chem_link_tor.atom_id_1
+_chem_link_tor.atom_2_comp_id
+_chem_link_tor.atom_id_2
+_chem_link_tor.atom_3_comp_id
+_chem_link_tor.atom_id_3
+_chem_link_tor.atom_4_comp_id
+_chem_link_tor.atom_id_4
+_chem_link_tor.value_angle
+_chem_link_tor.value_angle_esd
+_chem_link_tor.period
+ sp3_sp3_cys_hinge   1 CA    1 CB    1 SG    2 <CB>   180.0  20.0  3
+
+
+# =====================================================================
+# Cys-side modification: delete HG (the thiol H)
+# =====================================================================
+data_mod_CYS-EPX-mod1
+loop_
+_chem_mod_atom.mod_id
+_chem_mod_atom.function
+_chem_mod_atom.atom_id
+_chem_mod_atom.new_atom_id
+_chem_mod_atom.new_type_symbol
+_chem_mod_atom.new_type_energy
+_chem_mod_atom.new_partial_charge
+ CYS-EPX-mod1 delete HG . . . .
+
+
+# =====================================================================
+# Ligand-side modification — POST-PRODUCT β-HYDROXY THIOETHER INPUT.
+#
+# User uploaded a ligand where the epoxide ring is already opened
+# (-S-Cβ(H)(R)-Cα(H)(R')-OH form). Just delete the spare H on Cβ
+# that's replaced by the new SG bond.
+#
+# If the runtime detector instead matched the closed epoxide ring
+# (free drug SMILES with O-Cα-Cβ 3-ring), use CYS-EPX-mod2-epoxide.cif
+# which:
+#   (1) deletes the Cβ-O bond (breaks the 3-ring)
+#   (2) adds an H on the O to make -OH on Cα
+#   (3) no carbon retype (both stay sp3)
+# =====================================================================
+data_mod_CYS-EPX-mod2
+loop_
+_chem_mod_atom.mod_id
+_chem_mod_atom.function
+_chem_mod_atom.atom_id
+_chem_mod_atom.new_atom_id
+_chem_mod_atom.new_type_symbol
+_chem_mod_atom.new_type_energy
+_chem_mod_atom.new_partial_charge
+ CYS-EPX-mod2 delete <HCB> . . . .

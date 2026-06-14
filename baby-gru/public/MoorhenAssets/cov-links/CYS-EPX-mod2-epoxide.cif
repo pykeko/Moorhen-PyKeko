@@ -1,0 +1,51 @@
+# CYS-EPX-mod2-epoxide — alternative mod2 for the epoxide pre-reaction input
+#
+# When the user uploaded a ligand with the epoxide 3-ring still closed
+# (the free-drug SMILES form, e.g. C1OC1R for terminal epoxide or any
+# epoxide-bearing inhibitor / probe), this mod2 REPLACES the default
+# `data_mod_CYS-EPX-mod2` in CYS-EPX.cif. Encodes the ring-opening
+# chemistry that the bond declaration triggers:
+#
+#   (1) Delete the Cβ-O bond (opens the 3-ring)
+#   (2) Add an H atom on the epoxide-O (it becomes -OH on Cα — the H
+#       comes from solvent during the opening; nominal H-O distance
+#       0.96 Å, but the chem_comp's bond block governs that)
+#   (3) Add the O-H bond (links the new hydroxyl H to the O)
+#   (4) No carbon retype — both Cα and Cβ stay sp3 (they were sp3 in
+#       the strained ring too; ring opening just releases strain)
+#   (5) The new SG-Cβ bond is added via the link's bond block (not here)
+#
+# Selected at runtime when the SMARTS detector matched CYS-EPX-pre
+# (epoxide-ring-bearing ligand).
+#
+# PLACEHOLDER TOKENS substituted at runtime:
+#   <CB>  ← Cβ atom-id (the ring C that gets the SG)
+#   <CA>  ← Cα atom-id (the ring C that keeps the O)
+#   <OE>  ← epoxide-O atom-id
+#   <HOE> ← new H to add on the O (becomes the Cα hydroxyl H)
+
+data_mod_CYS-EPX-mod2
+
+# (1) Delete the Cβ-O bond (opens the 3-ring)
+# (3) Add the new O-H bond
+loop_
+_chem_mod_bond.mod_id
+_chem_mod_bond.function
+_chem_mod_bond.atom_id_1
+_chem_mod_bond.atom_id_2
+_chem_mod_bond.new_type
+_chem_mod_bond.new_value_dist
+_chem_mod_bond.new_value_dist_esd
+ CYS-EPX-mod2 delete <CB>  <OE>   .     .    .
+ CYS-EPX-mod2 add    <OE>  <HOE>  single 0.96 0.01
+
+# (2) Add the new H on O — energy type H (refmac's standard hydroxyl H)
+loop_
+_chem_mod_atom.mod_id
+_chem_mod_atom.function
+_chem_mod_atom.atom_id
+_chem_mod_atom.new_atom_id
+_chem_mod_atom.new_type_symbol
+_chem_mod_atom.new_type_energy
+_chem_mod_atom.new_partial_charge
+ CYS-EPX-mod2 add    <HOE> <HOE> H H .

@@ -36,7 +36,7 @@ export interface CovalentPlacementInput {
     ligandDictText: string;
     lig: string;                            // ligand TLC, e.g. "IBR"
     cbAtomName: string;                     // "C1" / "C19" / etc.
-    family: "F1" | "F2" | "F3" | "F5";
+    family: "F1" | "F2" | "F3" | "F4" | "F5" | "F6";
 }
 
 export interface CovalentPlacementResult {
@@ -52,10 +52,16 @@ export interface CovalentPlacementResult {
  *  F2 (vinyl thioether, sp²): 1.78 Å.
  *  F1 (saturated acrylamide thioether, sp³): 1.81 Å.
  *  F3 (chloroacetamide SN2 product, sp³): 1.81 Å (same as F1).
- *  F5 (maleimide 3-thiosuccinimide, sp³): 1.81 Å (same as F1).
+ *  F4 (β-hydroxy thioether from epoxide opening, sp³): 1.81 Å.
+ *  F5 (maleimide 3-thiosuccinimide, sp³): 1.81 Å.
+ *  F6 (hemithioketal, sp³): 1.83 Å — slightly longer than other sp³
+ *      thioethers due to the polar geminal -OH neighbour weakening
+ *      the S-C bond.
  */
-function bondLengthForFamily(family: "F1" | "F2" | "F3" | "F5"): number {
-    return family === "F2" ? 1.78 : 1.81;
+function bondLengthForFamily(family: "F1" | "F2" | "F3" | "F4" | "F5" | "F6"): number {
+    if (family === "F2") return 1.78;
+    if (family === "F6") return 1.83;
+    return 1.81;
 }
 
 /**

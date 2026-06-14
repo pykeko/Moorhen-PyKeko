@@ -1,0 +1,139 @@
+# CYS-RVC — Cys-S to ketone/aldehyde reversible covalent adduct (hemithioketal)
+#
+# Hand-authored link CIF for PyKeko covalent-ligand workflow.
+# Family F6 of the plan-doc taxonomy: covers warheads that form a
+# REVERSIBLE covalent bond with Cys-S — typically reactive carbonyls
+# (ketones, aldehydes) yielding a tetrahedral hemithioketal at the
+# attack site. Boronate warheads (bortezomib-class) form an analogous
+# B-S linkage but the boronate chemistry is distinct enough to need
+# its own link CIF (CYS-BRC.cif, not shipped in v0.2.32).
+#
+# Mechanism:
+#   R-C(=O)-R'  +  Cys-S⁻  ⇌  R-C(OH)(S-Cys)-R'  (sp³, tetrahedral)
+#
+# The bond IS reversible — the equilibrium favours the hemithioketal
+# in the binding pocket (where the local Cys-S concentration is high
+# and the carbonyl is positioned by other binding interactions) but
+# the bond can break under different conditions. For refmacat modelling
+# we treat it as a snapshot: the bound state is what we refine; the
+# reversibility is a binding-energetics property, not a structural one.
+#
+# Differences vs F1/F3/F5 (sp3 thioether amide chemistries):
+#   * No amide N — the carbonyl is a ketone/aldehyde, not an amide.
+#     This is the detector's distinguishing signature: Cβ has =O but
+#     NO N neighbour.
+#   * Cβ retypes sp2 → sp3 (was carbonyl, becomes tetrahedral).
+#   * The carbonyl-O becomes -OH on Cβ (not on a separate Cα as in F4
+#     epoxide). The O stays on the same atom; just the bond order
+#     and one new H change.
+#
+# PLACEHOLDER TOKENS substituted at runtime:
+#   <LIG> ← ligand 3-letter (or 5-char) CCD code
+#   <CB>  ← Cβ atom-id (the C that takes the SG; was the carbonyl C)
+#   <O>   ← the (formerly carbonyl, now hydroxyl) O atom-id
+#   <HO>  ← H to add on the O (the hemithioketal hydroxyl H)
+#   <HCB> ← H to delete on Cβ (post-product input only; only if Cβ
+#            was uploaded with an explicit spare H to delete, which is
+#            rare for hemithioketal form since Cβ usually keeps its
+#            two original substituents)
+#
+# References:
+#   ~/Moorhen/docs/refs/nicholls-modelling-2021.pdf — CCP4-ML link-CIF format
+#   ~/Moorhen/docs/covalent-ligand-plan.md §2.6 (F6 reversible carbonyl family)
+
+data_link_CYS-RVC
+_chem_link.id                CYS-RVC
+_chem_link.name              "Cys-S to ketone/aldehyde reversible adduct (hemithioketal)"
+_chem_link.comp_id_1         CYS
+_chem_link.mod_id_1          CYS-RVC-mod1
+_chem_link.group_comp_1      L-peptide
+_chem_link.comp_id_2         <LIG>
+_chem_link.mod_id_2          CYS-RVC-mod2
+_chem_link.group_comp_2      non-polymer
+
+# ---- bonds: new S-Cβ single bond (sp3 S to sp3 C) ----
+loop_
+_chem_link_bond.atom_1_comp_id
+_chem_link_bond.atom_id_1
+_chem_link_bond.atom_2_comp_id
+_chem_link_bond.atom_id_2
+_chem_link_bond.type
+_chem_link_bond.value_dist
+_chem_link_bond.value_dist_esd
+ 1 SG    2 <CB>   single 1.83 0.03
+
+# ---- angles around the new sp3 hemithioketal ----
+# Cys side: standard sp3 thioether range, slightly wider σ because
+# the hemithioketal is more strained electronically than a simple
+# sp3 thioether.
+# Ligand side: SG-Cβ-O ~109° (tetrahedral with one polar substituent).
+loop_
+_chem_link_angle.atom_1_comp_id
+_chem_link_angle.atom_id_1
+_chem_link_angle.atom_2_comp_id
+_chem_link_angle.atom_id_2
+_chem_link_angle.atom_3_comp_id
+_chem_link_angle.atom_id_3
+_chem_link_angle.value_angle
+_chem_link_angle.value_angle_esd
+ 1 CB    1 SG    2 <CB>   100.0   4.0
+ 1 SG    2 <CB>  2 <O>    109.0   3.0
+
+# ---- soft torsion ----
+loop_
+_chem_link_tor.id
+_chem_link_tor.atom_1_comp_id
+_chem_link_tor.atom_id_1
+_chem_link_tor.atom_2_comp_id
+_chem_link_tor.atom_id_2
+_chem_link_tor.atom_3_comp_id
+_chem_link_tor.atom_id_3
+_chem_link_tor.atom_4_comp_id
+_chem_link_tor.atom_id_4
+_chem_link_tor.value_angle
+_chem_link_tor.value_angle_esd
+_chem_link_tor.period
+ sp3_sp3_cys_hinge 1 CA    1 CB    1 SG    2 <CB>   180.0  25.0  3
+
+
+# =====================================================================
+# Cys-side modification: delete HG (the thiol H)
+# =====================================================================
+data_mod_CYS-RVC-mod1
+loop_
+_chem_mod_atom.mod_id
+_chem_mod_atom.function
+_chem_mod_atom.atom_id
+_chem_mod_atom.new_atom_id
+_chem_mod_atom.new_type_symbol
+_chem_mod_atom.new_type_energy
+_chem_mod_atom.new_partial_charge
+ CYS-RVC-mod1 delete HG . . . .
+
+
+# =====================================================================
+# Ligand-side modification — POST-PRODUCT HEMITHIOKETAL INPUT BRANCH.
+#
+# User uploaded a ligand where the hemithioketal is already drawn —
+# Cβ has S, OH, R, R'. No structural changes needed (Cβ already sp3,
+# already has the right neighbours). The minimal mod2 is empty.
+#
+# If the runtime detector instead matched the carbonyl pre-reaction
+# form (free drug SMILES with C=O), use CYS-RVC-mod2-carbonyl.cif
+# which:
+#   (1) changes the C=O bond from double to single
+#   (2) retypes Cβ from sp2 (CR1 / C carbonyl) to sp3 (CT)
+#   (3) adds an H on the O (the hemithioketal hydroxyl H)
+# =====================================================================
+data_mod_CYS-RVC-mod2
+loop_
+_chem_mod_atom.mod_id
+_chem_mod_atom.function
+_chem_mod_atom.atom_id
+_chem_mod_atom.new_atom_id
+_chem_mod_atom.new_type_symbol
+_chem_mod_atom.new_type_energy
+_chem_mod_atom.new_partial_charge
+# No-op: F6 post-product (hemithioketal) input requires no atom changes
+# on the ligand. Cβ in the saturated form already has the correct bond
+# list. Empty loop_ block kept for parser-compatibility.

@@ -1,0 +1,49 @@
+# CYS-RVC-mod2-carbonyl — alternative mod2 for the carbonyl pre-reaction input
+#
+# When the user uploaded a ligand with the carbonyl C=O still drawn
+# (the free-drug SMILES form, e.g. simple ketone/aldehyde warhead),
+# this mod2 REPLACES the default `data_mod_CYS-RVC-mod2` in CYS-RVC.cif.
+# Encodes the hemithioketal-formation chemistry the bond declaration
+# triggers:
+#
+#   (1) Change C=O bond from double to single
+#   (2) Add H on the O (the new hydroxyl H)
+#   (3) Add the O-H bond
+#   (4) Retype Cβ from sp2 (CR1) to sp3 (CT)
+#   (5) The new SG-Cβ bond is added via the link's bond block (not here)
+#
+# Selected at runtime when the SMARTS detector matched CYS-RVC-pre
+# (free-drug ketone or aldehyde Cys-warhead).
+#
+# PLACEHOLDER TOKENS substituted at runtime:
+#   <CB>  ← Cβ atom-id (the former carbonyl C, becomes sp3)
+#   <O>   ← the former carbonyl O (becomes the hemithioketal hydroxyl O)
+#   <HO>  ← new H to add on the O
+
+data_mod_CYS-RVC-mod2
+
+# (1) Change Cβ=O from double → single (carbonyl → hydroxyl)
+# (3) Add the new O-H bond
+loop_
+_chem_mod_bond.mod_id
+_chem_mod_bond.function
+_chem_mod_bond.atom_id_1
+_chem_mod_bond.atom_id_2
+_chem_mod_bond.new_type
+_chem_mod_bond.new_value_dist
+_chem_mod_bond.new_value_dist_esd
+ CYS-RVC-mod2 change <CB>  <O>    single 1.42 0.02
+ CYS-RVC-mod2 add    <O>   <HO>   single 0.96 0.01
+
+# (2) Add new H on O
+# (4) Retype Cβ from sp2 (CR1) to sp3 (CT)
+loop_
+_chem_mod_atom.mod_id
+_chem_mod_atom.function
+_chem_mod_atom.atom_id
+_chem_mod_atom.new_atom_id
+_chem_mod_atom.new_type_symbol
+_chem_mod_atom.new_type_energy
+_chem_mod_atom.new_partial_charge
+ CYS-RVC-mod2 add    <HO>  <HO>   H H  .
+ CYS-RVC-mod2 change <CB>  .      C CT .

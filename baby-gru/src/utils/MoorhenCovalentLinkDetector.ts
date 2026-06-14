@@ -25,6 +25,8 @@ import {
     ensureRegistryLoaded,
     buildAtomMap,
     buildAtomMapF3,
+    buildAtomMapF4,
+    buildAtomMapF6,
     LigandAtom,
     LigandBond,
     CovLinkAtomMap,
@@ -73,7 +75,7 @@ export async function detectWarheadFamily(
     atoms: LigandAtom[],
     bonds: LigandBond[],
     cbIdx: number,
-    preferFamily?: "F1" | "F2" | "F3" | "F5"
+    preferFamily?: "F1" | "F2" | "F3" | "F4" | "F5" | "F6"
 ): Promise<DetectionResult | null> {
     const registry = await ensureRegistryLoaded();
 
@@ -197,6 +199,53 @@ export async function detectWarheadFamily(
         return { entry, atomMap, cbIdx, caIdx };
     }
 
+    // F4 epoxide branch: Cβ is bonded to an O that is itself bonded to
+    // another C — the 3-ring O-Cα-Cβ closure. Same O appears on both Cβ
+    // and Cα with single bonds. This signature is unique to epoxides
+    // (and oxiranes more broadly) because no other functional group
+    // makes a 3-ring containing exactly one O and two C's bonded to
+    // each other.
+    for (const cbN of cbNeighbors) {
+        if (atoms[cbN.idx].element !== "O") continue;
+        if (cbN.order !== 1) continue;
+        const oeCandidate = cbN.idx;
+        // Walk from O to find a C neighbour that is ALSO bonded directly
+        // to Cβ (closing the 3-ring).
+        const oNeighbors = neighborsOf(oeCandidate, bonds);
+        let caCandidate = -1;
+        for (const oN of oNeighbors) {
+            if (oN.idx === cbIdx) continue;
+            if (atoms[oN.idx].element !== "C") continue;
+            // Is this C bonded directly to Cβ?
+            const directlyToCb = bonds.some(
+                (b) =>
+                    (b.a === oN.idx && b.b === cbIdx) ||
+                    (b.b === oN.idx && b.a === cbIdx)
+            );
+            if (directlyToCb) {
+                caCandidate = oN.idx;
+                break;
+            }
+        }
+        if (caCandidate < 0) continue;
+
+        // Pre vs post: in pre-reaction (closed ring) input, the O has
+        // EXACTLY 2 heavy neighbours (Cα and Cβ — closing the ring).
+        // In post-product (opened) input, Cβ would NOT have an O
+        // neighbour any more (the ring already opened) — so reaching this
+        // branch implicitly means pre-reaction. The post-product case is
+        // detected separately below if Cβ has H neighbours but no O.
+        const wantedVariant: CovLinkRegistryEntry["mod2_variant"] = "epoxide";
+
+        const entry = registry.warheads.find(
+            (w) => w.family === "F4" && w.mod2_variant === wantedVariant
+        );
+        if (!entry) continue;
+
+        const atomMap = buildAtomMapF4(lig, atoms, bonds, cbIdx, caCandidate, oeCandidate);
+        return { entry, atomMap, cbIdx, caIdx: caCandidate };
+    }
+
     // F3 chloroacetamide branch: Cβ is bonded DIRECTLY to the carbonyl-C
     // (no intervening Cα). The signature is "Cβ has a carbon neighbour
     // that is itself a carbonyl (=O and -N)". For pre-reaction input we
@@ -229,6 +278,36 @@ export async function detectWarheadFamily(
         // the warhead's bond graph is concerned). Callers that look at
         // caIdx for F3-specific logic should use atomMap fields instead.
         return { entry, atomMap, cbIdx, caIdx: coCandidate };
+    }
+
+    // F6 reversible carbonyl branch: Cβ has =O (carbonyl oxygen)
+    // and NO N within 1 bond of the carbonyl-C (distinguishes from
+    // amide carbonyls in F1/F2/F3/F5). The classic warheads are
+    // simple ketones / aldehydes that form hemithioketals with Cys-S.
+    for (const cbN of cbNeighbors) {
+        if (atoms[cbN.idx].element !== "O") continue;
+        if (cbN.order !== 2) continue;
+        // Cβ has a =O — but is it an amide carbonyl? Check Cβ's other
+        // neighbours for N. If found, this is amide chemistry already
+        // covered by F1/F2/F3/F5 and we skip.
+        const hasNAmide = cbNeighbors.some(
+            (n) => atoms[n.idx].element === "N"
+        );
+        if (hasNAmide) continue;
+        // Found a non-amide carbonyl: F6 candidate. The mod2 variant is
+        // "carbonyl" (pre-reaction free C=O). The post-product (hemi-
+        // thioketal) signature would have Cβ with -OH + -S + R + R',
+        // detected separately if needed.
+        const wantedVariant: CovLinkRegistryEntry["mod2_variant"] = "carbonyl";
+        const entry = registry.warheads.find(
+            (w) => w.family === "F6" && w.mod2_variant === wantedVariant
+        );
+        if (!entry) continue;
+        const atomMap = buildAtomMapF6(lig, atoms, bonds, cbIdx, cbN.idx);
+        // No proper caIdx for F6 — Cβ is the only carbon in scope. Return
+        // -1 as a sentinel; downstream code that needs caIdx for F6
+        // should fall back to atomMap fields.
+        return { entry, atomMap, cbIdx, caIdx: -1 };
     }
 
     return null;

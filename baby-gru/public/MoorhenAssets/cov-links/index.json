@@ -125,6 +125,52 @@
       "mod2_variant": "alkene_ring",
       "mod2_cif": "CYS-MAL-mod2-alkene.cif",
       "$comment": "Maleimide ring with C=C still drawn (free-probe form). The mod2 transforms ring C=C → C-C single + adds H on Cα + retypes both sp2→sp3. Cβ keeps its single H (unlike F1-pre-terminal where Cβ has 2H pre-reaction). Detected by checking that Cβ's =Cα is bonded to a carbonyl whose amide-N is shared with another carbonyl-C that's a SECOND single-bond neighbour of Cβ (the 5-ring closure)."
+    },
+    {
+      "id": "CYS-EPX-post",
+      "family": "F4",
+      "name": "Cys-S to epoxide post-product (beta-hydroxy thioether)",
+      "drugs": ["E-64 family (bound)", "various epoxide warhead probes (bound)"],
+      "smarts": "[#16][C:1][C:2][OH]",
+      "mapping": { "cb": 1, "ca": 2 },
+      "link_cif": "CYS-EPX.cif",
+      "mod2_variant": "post",
+      "$comment": "Saturated β-hydroxy thioether form: epoxide ring already opened with the O migrated to Cα as -OH. Distinguishable from F1-post by Cα carrying a hydroxyl rather than continuing to a carbonyl chain."
+    },
+    {
+      "id": "CYS-EPX-pre",
+      "family": "F4",
+      "name": "Cys-S to epoxide (closed 3-ring pre-reaction form)",
+      "drugs": ["E-64 family (free)", "terminal epoxide probes (free)", "epoxysuccinyl Cys protease inhibitors"],
+      "smarts": "[C:1]1O[C:2]1",
+      "mapping": { "cb": 1, "ca": 2 },
+      "link_cif": "CYS-EPX.cif",
+      "mod2_variant": "epoxide",
+      "mod2_cif": "CYS-EPX-mod2-epoxide.cif",
+      "$comment": "Closed 3-ring epoxide form. The mod2 deletes the Cβ-O bond (opens the ring) and adds an H atom on the O + the new O-H bond (becomes the Cα hydroxyl). No carbon retype — both Cα and Cβ stay sp3 (ring strain released, hybridisation unchanged). Detected by Cβ having an O neighbour that is itself bonded to another C that is also a direct neighbour of Cβ (the 3-ring closure)."
+    },
+    {
+      "id": "CYS-RVC-post",
+      "family": "F6",
+      "name": "Cys-S to ketone/aldehyde reversible adduct (hemithioketal)",
+      "drugs": ["GAPDH active-site probes (bound)", "tropinone-like aldehyde inhibitors (bound)"],
+      "smarts": "[#16][C:1]([OH])",
+      "mapping": { "cb": 1 },
+      "link_cif": "CYS-RVC.cif",
+      "mod2_variant": "post",
+      "$comment": "Hemithioketal form: Cβ is sp3 with S, OH, and two original carbonyl substituents (R, R'). Reversible bond — equilibrium favours the bound form in the active site but reversibility is a binding-energetics property, not a structural one for refmacat. Distinguishable from F4-post (β-hydroxy thioether) by the OH being on Cβ itself rather than on the adjacent Cα."
+    },
+    {
+      "id": "CYS-RVC-pre",
+      "family": "F6",
+      "name": "Cys-S to ketone/aldehyde (carbonyl pre-reaction form)",
+      "drugs": ["ketone-warhead probes (free)", "reactive aldehyde inhibitors (free)"],
+      "smarts": "[C:1]=O",
+      "mapping": { "cb": 1 },
+      "link_cif": "CYS-RVC.cif",
+      "mod2_variant": "carbonyl",
+      "mod2_cif": "CYS-RVC-mod2-carbonyl.cif",
+      "$comment": "Free carbonyl (ketone or aldehyde) Cys-warhead. The mod2 changes C=O double → C-O single + adds H on O + retypes Cβ from sp2 (CR1) to sp3 (CT). Detected by Cβ having =O and NO N anywhere on Cβ (distinguishes from amide carbonyls in F1/F2/F3/F5). NOTE: this SMARTS is broad — it matches ALL non-amide carbonyl-bearing molecules, including ones not intended as covalent warheads. The detector's no-N check at Cβ keeps amide false-positives out, but legitimate non-warhead aldehydes/ketones (e.g. nucleic acid backbone, drug metabolic groups) could match. User should use this entry only when they actually intend covalent attachment to a carbonyl."
     }
   ]
 }

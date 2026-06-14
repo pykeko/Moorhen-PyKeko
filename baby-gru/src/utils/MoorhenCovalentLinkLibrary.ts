@@ -41,10 +41,20 @@ export interface CovLinkAtomMap {
      * Used in v2 plane + dihedral restraints (per AceDRG convention).
      * Undefined for F3 chloroacetamide (no Cγ — only one warhead carbon). */
     cg?: string;
-    /** Amide-N atom-id. */
-    n: string;
-    /** Carbonyl-O atom-id. */
-    o: string;
+    /** Amide-N atom-id. Undefined for F4 epoxide and F6 reversible carbonyl
+     * where the chemistry is at an isolated functional group, not an amide. */
+    n?: string;
+    /** Carbonyl-O atom-id. Undefined for the same reason as n. */
+    o?: string;
+    /** Epoxide ring oxygen atom-id (F4 family only). The ring opens at the
+     * Cβ-O bond on Cys-S attack; this O ends up as -OH on Cα. */
+    oe?: string;
+    /** H atom-id to ADD on the epoxide O (F4 family only). Picks up a
+     * proton from solvent during ring opening to become -OH. */
+    hoe?: string;
+    /** H atom-id to ADD on the carbonyl O (F6 hemithioketal). Becomes
+     * the hydroxyl H after Cys-S addition collapses C=O to C-OH. */
+    ho?: string;
     /**
      * H atom-id to delete on Cβ in the post-product input case.
      * Empty string when the input is the alkyne pre-Michael form.
@@ -83,8 +93,10 @@ export interface CovLinkRegistryEntry {
      *   F2 ynamide: post (vinyl-thioether) | alkyne | alkyne_terminal
      *   F1 acrylamide: post (saturated thioether) | alkene | alkene_terminal
      *   F3 chloroacetamide: post (sat. β-thioether, no Cl) | chloride (Cl present)
-     *   F5 maleimide: post (3-thiosuccinimide) | alkene_ring (maleimide ring C=C) */
-    mod2_variant: "post" | "alkyne" | "alkyne_terminal" | "alkene" | "alkene_terminal" | "chloride" | "alkene_ring";
+     *   F4 epoxide: post (sat. β-hydroxy thioether) | epoxide (closed 3-ring)
+     *   F5 maleimide: post (3-thiosuccinimide) | alkene_ring (maleimide ring C=C)
+     *   F6 reversible carbonyl: post (sat. hemithioketal) | carbonyl (free C=O) */
+    mod2_variant: "post" | "alkyne" | "alkyne_terminal" | "alkene" | "alkene_terminal" | "chloride" | "alkene_ring" | "epoxide" | "carbonyl";
     /** Filename of the alternative mod2 block, if mod2_variant !== "post". */
     mod2_cif?: string;
 }
@@ -157,15 +169,18 @@ export function applyAtomMap(cifText: string, atomMap: CovLinkAtomMap): string {
     const replacements: [RegExp, string][] = [
         [/<LIG>/g, atomMap.lig],
         [/<CB>/g, atomMap.cb],
-        [/<CO>/g, atomMap.co],
-        [/<N>/g, atomMap.n],
-        [/<O>/g, atomMap.o],
     ];
+    if (atomMap.co) replacements.push([/<CO>/g, atomMap.co]);
+    if (atomMap.n) replacements.push([/<N>/g, atomMap.n]);
+    if (atomMap.o) replacements.push([/<O>/g, atomMap.o]);
     if (atomMap.ca) replacements.push([/<CA>/g, atomMap.ca]);
     if (atomMap.cg) replacements.push([/<CG>/g, atomMap.cg]);
     if (atomMap.hcb) replacements.push([/<HCB>/g, atomMap.hcb]);
     if (atomMap.hca) replacements.push([/<HCA>/g, atomMap.hca]);
     if (atomMap.cl) replacements.push([/<CL>/g, atomMap.cl]);
+    if (atomMap.oe) replacements.push([/<OE>/g, atomMap.oe]);
+    if (atomMap.hoe) replacements.push([/<HOE>/g, atomMap.hoe]);
+    if (atomMap.ho) replacements.push([/<HO>/g, atomMap.ho]);
 
     let result = cifText;
     for (const [pattern, value] of replacements) {
@@ -385,6 +400,129 @@ export function buildAtomMap(
         o: atoms[oIdx].name,
         hcb: hcbIdx !== undefined ? atoms[hcbIdx].name : undefined,
         hca: hcaName,
+    };
+}
+
+/**
+ * Atom-map builder for F6 reversible carbonyl chemistry. Cβ (the
+ * attack carbon) was sp2 in the carbonyl form, becomes sp3
+ * tetrahedral in the hemithioketal product. The carbonyl O stays
+ * attached to Cβ; just the bond order drops from 2 to 1 and the O
+ * gains an H to become -OH.
+ *
+ * @param oIdx index of the carbonyl O (the one =O-bonded to Cβ).
+ */
+export function buildAtomMapF6(
+    lig: string,
+    atoms: LigandAtom[],
+    bonds: LigandBond[],
+    cbIdx: number,
+    oIdx: number
+): CovLinkAtomMap {
+    const neighborsOf = (i: number): number[] =>
+        bonds
+            .filter((b) => b.a === i || b.b === i)
+            .map((b) => (b.a === i ? b.b : b.a));
+
+    // Derive a guaranteed-unique name for the new hydroxyl H on the
+    // carbonyl O. Pattern: H + numeric suffix of the O atom's name
+    // (e.g. O1 → HO1, then HO1A, HO1B, …).
+    const existingNames = new Set(atoms.map((a) => a.name));
+    const oName = atoms[oIdx].name;
+    const oNumMatch = oName.match(/^[A-Za-z]+(\d+)/);
+    const oNum = oNumMatch ? oNumMatch[1] : "";
+    let hoName: string | undefined;
+    const candidates: string[] = [];
+    if (oNum) candidates.push(`HO${oNum}`, `H${oNum}O`);
+    for (const suffix of "ABCDEFGHIJK") {
+        if (oNum) candidates.push(`HO${oNum}${suffix}`);
+    }
+    for (let i = 0; i < 100; i++) {
+        candidates.push(oNum ? `HO${oNum}_${i}` : `HO_${i}`);
+    }
+    for (const cand of candidates) {
+        if (!existingNames.has(cand)) {
+            hoName = cand;
+            break;
+        }
+    }
+
+    // Cβ may also have a spare H to delete in the post-product input
+    // case; for the pre-reaction (carbonyl) input there's no spare H
+    // (sp2 Cβ has 3 neighbours total: =O, R, R'; no H normally).
+    const cbNeighbors = neighborsOf(cbIdx);
+    const hcbIdx = cbNeighbors.find((i) => atoms[i].element === "H");
+
+    return {
+        lig,
+        cb: atoms[cbIdx].name,
+        o: atoms[oIdx].name,
+        ho: hoName,
+        hcb: hcbIdx !== undefined ? atoms[hcbIdx].name : undefined,
+    };
+}
+
+/**
+ * Atom-map builder for F4 epoxide chemistry. The attack carbon (Cβ) is
+ * bonded to: the other ring carbon (Cα, single bond), the ring oxygen
+ * (single bond), and substituents. After ring opening Cβ ends up with
+ * Cα, the rest, and S; the ring O migrates to Cα as -OH.
+ *
+ * @param oeIdx index of the ring O (the epoxide oxygen). The caller
+ *              (detector) identifies it as the O neighbour of Cβ that
+ *              is itself bonded to Cα (closing the 3-ring).
+ * @param caIdx index of the other ring carbon (Cα). Already known from
+ *              the detector having walked Cβ → ring O → Cα → back to Cβ.
+ */
+export function buildAtomMapF4(
+    lig: string,
+    atoms: LigandAtom[],
+    bonds: LigandBond[],
+    cbIdx: number,
+    caIdx: number,
+    oeIdx: number
+): CovLinkAtomMap {
+    const neighborsOf = (i: number): number[] =>
+        bonds
+            .filter((b) => b.a === i || b.b === i)
+            .map((b) => (b.a === i ? b.b : b.a));
+
+    // Cβ's spare H (for post-product input — the H currently on Cβ that
+    // gets replaced by SG).
+    const cbNeighbors = neighborsOf(cbIdx);
+    const hcbIdx = cbNeighbors.find((i) => atoms[i].element === "H");
+
+    // Derive a guaranteed-unique name for the new hydroxyl H on the
+    // epoxide O (pre-reaction case). Follow the ligand's H-naming
+    // convention: candidate "H" + numeric suffix of the O atom's name
+    // (e.g. O1 → H1). Fall through to suffixed variants if collision.
+    const existingNames = new Set(atoms.map((a) => a.name));
+    const oName = atoms[oeIdx].name;
+    const oNumMatch = oName.match(/^[A-Za-z]+(\d+)/);
+    const oNum = oNumMatch ? oNumMatch[1] : "";
+    let hoeName: string | undefined;
+    const candidates: string[] = [];
+    if (oNum) candidates.push(`HO${oNum}`, `H${oNum}O`);
+    for (const suffix of "ABCDEFGHIJK") {
+        if (oNum) candidates.push(`HO${oNum}${suffix}`);
+    }
+    for (let i = 0; i < 100; i++) {
+        candidates.push(oNum ? `HO${oNum}_${i}` : `HOE_${i}`);
+    }
+    for (const cand of candidates) {
+        if (!existingNames.has(cand)) {
+            hoeName = cand;
+            break;
+        }
+    }
+
+    return {
+        lig,
+        cb: atoms[cbIdx].name,
+        ca: atoms[caIdx].name,
+        oe: atoms[oeIdx].name,
+        hcb: hcbIdx !== undefined ? atoms[hcbIdx].name : undefined,
+        hoe: hoeName,
     };
 }
 
