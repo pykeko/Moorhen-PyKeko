@@ -1,10 +1,39 @@
 # Covalent ligand workflow — design plan
 
-> **Status: design plan, no code shipped.** Authored 2026-06-05 in response to
-> "All of our ligands are covalent with the sulfur of a cysteine, so getting
-> this right will be a huge time saver." The narrow Cys-S constraint is what
-> makes this plan tractable; for the general (Ser/Thr/Lys/Tyr/...) workflow,
-> see the CCP4 AceDRG-link path documented inline.
+> **Status: shipped end-to-end in pk-v0.2.37 (2026-06-14).** Authored 2026-06-05
+> in response to "All of our ligands are covalent with the sulfur of a
+> cysteine, so getting this right will be a huge time saver." The narrow Cys-S
+> constraint is what makes this plan tractable; for the general
+> (Ser/Thr/Lys/Tyr/...) workflow, see the CCP4 AceDRG-link path documented
+> inline.
+>
+> ## v0.2.37 ship summary
+>
+> The closed loop is live. Right-click a Cys → "Declare covalent link" →
+> pick a Cβ → declare. Three files land in the launch CWD (or `~/Desktop`):
+> the augmented mmCIF, the substituted link CIF (transformed to CCP4 format
+> with catalog blocks + link_id columns), and a PDB with LINKR record.
+> The panel keeps a "Refine with REFMAC5…" button — click → MTZ file picker
+> → refmac runs in the background with the sourced CCP4 env → refined PDB
+> appears in the same directory. End-to-end smoke on 5P9I with 1E8 placed
+> at SG+2.5 Å: SG-Cβ converges **2.500 → 1.856 Å** in 21 s (target 1.81).
+>
+> F1-F6 chemistry families all shipped (CYS-ACR, CYS-YNA, CYS-CAA, CYS-EPX,
+> CYS-MAL, CYS-RVC), 14 registry entries total. F2 has its dedicated section
+> below (the user's lab focus); other families are validated against the
+> AceDRG reference where the link directive can encode them (F3) and against
+> hand-derived chemistry where it can't (F1/F2/F4/F5/F6).
+>
+> ## What didn't pan out
+>
+> In-app real-space refinement (`refine_residues_using_atom_cid`) cannot
+> currently converge the bond to canonical distance — Coot's
+> `make_link_restraints_from_res_vec` is upstream-stubbed
+> (`ideal/link-restraints.cc:1022` returns an empty `bonded_pair_container_t`).
+> Filed at pemsley/coot#374. The v0.2.34 refmac extras path partially helps
+> (atoms held near target by a bond restraint) but caps at ~2.4 Å due to
+> VdW on the still-non-bonded SG↔Cβ pair. The refmac round-trip in v0.2.36+
+> sidesteps this entirely.
 
 ## TL;DR
 

@@ -512,7 +512,7 @@ function bondLengthForLinkEntry(entry: CovLinkRegistryEntry): number {
  * loop to include a `link_id` column (and `_chem_mod_<X>` loops to include
  * a `mod_id` column, if absent). Returns the refmac-ready text.
  */
-function toRefmacReadyLinkCif(linkCifText: string): string {
+export function toRefmacReadyLinkCif(linkCifText: string): string {
     // Extract link-level metadata from the data_link_<id> block.
     const linkIdMatch = linkCifText.match(/^_chem_link\.id\s+(\S+)/m);
     const linkId = linkIdMatch?.[1];
@@ -639,7 +639,7 @@ function toRefmacReadyLinkCif(linkCifText: string): string {
  *
  * Cross-checked against 8FD9.pdb (deposited covalent ibrutinib).
  */
-function buildLinkRecord(
+export function buildLinkRecord(
     chain1: string, resi1: string, comp1: string, atom1: string,
     chain2: string, resi2: string, comp2: string, atom2: string,
     length: number, linkId?: string
