@@ -279,3 +279,81 @@ function findNearestLigandAtomsImpl(
     within.sort((a, b) => a.distance - b.distance);
     return within;
 }
+
+/**
+ * v0.2.39 — inverse of findNearestLigandAtomsImpl. Given a ligand residue,
+ * walk the mmCIF for all CYS SG atoms in the model and return the closest one
+ * (by min distance to ANY atom of the ligand residue). Used by the menu-driven
+ * "Make covalent…" flow to pre-fill the Cys SG when the user starts from the
+ * ligand side instead of right-clicking the Cys.
+ *
+ * Returns null when:
+ *   - no atoms of the named residue are found in the model
+ *   - no CYS SG within maxDist Å of any ligand atom
+ *
+ * maxDist default 8 Å is generous — covalent ligands typically sit < 3 Å from
+ * SG when properly docked, but a freshly-placed ligand can be further before
+ * the user jiggles it in.
+ */
+export function findNearestCysSgToLigand(
+    mmcif: string,
+    ligand: { chain: string; resNo: number; comp: string },
+    maxDist: number = 8.0,
+): { cid: string; distance: number } | null {
+    const re = /loop_\s*\n((?:\s*_atom_site\.[A-Za-z0-9_]+\s*\n)+)/g;
+    let match: RegExpExecArray | null;
+    const ligandCoords: Array<{ x: number; y: number; z: number }> = [];
+    const cysSgs: Array<{ chain: string; resNo: number; x: number; y: number; z: number }> = [];
+
+    while ((match = re.exec(mmcif)) !== null) {
+        const tags = match[1].split(/\s+/).filter(t => t.startsWith("_atom_site."));
+        const idx = (col: string) => tags.indexOf(`_atom_site.${col}`);
+        const idxChain = idx("auth_asym_id"), idxSeq = idx("auth_seq_id"),
+              idxAtom = idx("label_atom_id"), idxComp = idx("label_comp_id"),
+              idxX = idx("Cartn_x"), idxY = idx("Cartn_y"), idxZ = idx("Cartn_z");
+        if (idxChain < 0 || idxSeq < 0 || idxAtom < 0 || idxComp < 0 ||
+            idxX < 0 || idxY < 0 || idxZ < 0) continue;
+
+        const rest = mmcif.substring(match.index + match[0].length);
+        const lines = rest.split("\n");
+        for (const rawLine of lines) {
+            const line = rawLine.trim();
+            if (!line || line.startsWith("#")) continue;
+            if (line.startsWith("_") || line.startsWith("loop_") || line.startsWith("data_")) break;
+            const cols = tokenizeMmcifRow(line);
+            if (cols.length < tags.length) continue;
+            const chain = cols[idxChain];
+            const seq = parseInt(cols[idxSeq], 10);
+            const atom = cols[idxAtom];
+            const comp = cols[idxComp];
+            const x = parseFloat(cols[idxX]);
+            const y = parseFloat(cols[idxY]);
+            const z = parseFloat(cols[idxZ]);
+            if (Number.isNaN(x) || Number.isNaN(y) || Number.isNaN(z)) continue;
+
+            if (chain === ligand.chain && seq === ligand.resNo && comp === ligand.comp) {
+                ligandCoords.push({ x, y, z });
+            }
+            if (comp === "CYS" && atom === "SG") {
+                cysSgs.push({ chain, resNo: seq, x, y, z });
+            }
+        }
+    }
+
+    if (ligandCoords.length === 0 || cysSgs.length === 0) return null;
+
+    let best: { cid: string; distance: number } | null = null;
+    for (const sg of cysSgs) {
+        let minD = Infinity;
+        for (const lc of ligandCoords) {
+            const dx = sg.x - lc.x, dy = sg.y - lc.y, dz = sg.z - lc.z;
+            const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (d < minD) minD = d;
+        }
+        if (minD > maxDist) continue;
+        if (!best || minD < best.distance) {
+            best = { cid: `//${sg.chain}/${sg.resNo}/SG`, distance: minD };
+        }
+    }
+    return best;
+}

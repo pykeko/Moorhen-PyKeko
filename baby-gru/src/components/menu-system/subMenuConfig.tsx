@@ -663,6 +663,14 @@ export const subMenuMap: SubMenuMap = {
                 content: MenuItems.SMILESToLigand,
             },
             {
+                id: "make-covalent",
+                label: "Make covalent...",
+                type: "popover",
+                keywords: ["covalent", "Cys", "warhead", "link", "inhibitor"],
+                description: "Declare a covalent bond from a loaded ligand to the nearest Cys SG",
+                content: MenuItems.MakeCovalentMenuItem,
+            },
+            {
                 id: "centre-on-ligand",
                 label: "Centre on ligand...",
                 type: "popover",

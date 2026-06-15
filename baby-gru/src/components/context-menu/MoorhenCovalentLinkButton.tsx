@@ -32,15 +32,21 @@ interface LinkRegistryItem {
     link_cif: string;
 }
 
-const LinkPanel = (props: {
+export const LinkPanel = (props: {
     molecule: moorhen.Molecule;
     sgCid: string;
     commandCentre: React.RefObject<moorhen.CommandCentre>;
     setShowOverlay: React.Dispatch<React.SetStateAction<boolean>>;
     urlPrefix: string;
+    // v0.2.39: optional pre-fills used by the menu-driven entry point
+    // (Ligand → Make covalent…). When set, the panel opens with the SG
+    // and Cβ already chosen; the detector auto-select effect runs once
+    // cbCid is non-empty, so the warhead template selects itself for free.
+    initialCbCid?: string;
+    sgCidSourceLabel?: string;
 }) => {
-    const { molecule, sgCid, commandCentre, setShowOverlay, urlPrefix } = props;
-    const [cbCid, setCbCid] = useState("");
+    const { molecule, sgCid, commandCentre, setShowOverlay, urlPrefix, initialCbCid, sgCidSourceLabel } = props;
+    const [cbCid, setCbCid] = useState(initialCbCid ?? "");
     const [linkId, setLinkId] = useState("");
     const [registry, setRegistry] = useState<LinkRegistryItem[]>([]);
     const [picking, setPicking] = useState(false);
@@ -256,16 +262,24 @@ const LinkPanel = (props: {
         }
     }, [cbCid, linkId, sgCid, registry, urlPrefix, commandCentre, molecule.molNo, molecule.name, setShowOverlay]);
 
-    // Spawn refmac5 against the just-saved augmented mmCIF + a user-picked
-    // MTZ. Loads the refined model back into Moorhen on success.
+    // Spawn refmac5 — works whether or not a covalent bond has been
+    // declared yet. The user may want to refine the protein-ligand
+    // complex first (e.g. before the covalent bond is declared, to
+    // settle the ligand pose), declare the bond, and refine again to
+    // pull SG-Cβ to canonical distance.
+    //
+    // XYZIN priority: savedModelPdb (post-declare, has LINKR + good
+    // atom-id column alignment) → savedModelCif (post-declare, mmCIF
+    // padding may bite refmac) → export current model directly
+    // (pre-declare path).
     const runRefmac = useCallback(async () => {
-        if (!savedModelCif) return;
         const api: any = (typeof window !== "undefined") ? (window as any).MoorhenControlApi : null;
         if (!api?.pickMtzFile || !api?.runRefmacat) {
             setStatus("REFMAC5 spawn requires PyKeko desktop build");
             setStatusKind("error");
             return;
         }
+        const ctrl: any = (typeof window !== "undefined") ? (window as any).__moorhenControl : null;
         try {
             setRefmacBusy(true);
             setStatus("Pick your MTZ…");
@@ -283,10 +297,40 @@ const LinkPanel = (props: {
                 setRefmacBusy(false);
                 return;
             }
+            // Resolve XYZIN. If we already have a saved augmented PDB
+            // from a prior declare, use it. Otherwise export the current
+            // model and save to disk so refmac has something to read.
+            let xyzin = savedModelPdb || savedModelCif;
+            if (!xyzin) {
+                if (!ctrl?.saveTextFile) {
+                    setStatus("REFMAC5 requires saving a model file; IPC bridge unavailable");
+                    setStatusKind("error");
+                    setRefmacBusy(false);
+                    return;
+                }
+                setStatus("Exporting current model…");
+                const pdbResp: any = await commandCentre.current!.cootCommand(
+                    { returnType: "string", command: "molecule_to_PDB_string", commandArgs: [molecule.molNo] },
+                    false
+                );
+                const pdbText: string = pdbResp?.data?.result?.result || pdbResp?.data?.result || "";
+                if (!pdbText) {
+                    setStatus("Model export returned empty");
+                    setStatusKind("error");
+                    setRefmacBusy(false);
+                    return;
+                }
+                const safeBase = (molecule.name || "model").replace(/[^A-Za-z0-9_.-]/g, "_");
+                const r = await ctrl.saveTextFile(pdbText, `${safeBase}.pdb`, null);
+                if (!r?.ok || !r?.path) {
+                    setStatus(`Pre-refmac model save failed: ${r?.error || "no path"}`);
+                    setStatusKind("error");
+                    setRefmacBusy(false);
+                    return;
+                }
+                xyzin = r.path;
+            }
             setStatus("Running REFMAC5 (this may take a minute)…");
-            // Prefer PDB for XYZIN — refmac doesn't strip gemmi's quoted
-            // column-padded atom_id in mmCIF.
-            const xyzin = savedModelPdb || savedModelCif;
             const res = await api.runRefmacat(xyzin, picked.path, savedLinkCif || null, 5);
             if (!res?.ok) {
                 if (res?.notInstalled) {
@@ -317,7 +361,7 @@ const LinkPanel = (props: {
             setStatusKind("error");
             setRefmacBusy(false);
         }
-    }, [savedModelCif, savedModelPdb, savedLinkCif, linkId]);
+    }, [savedModelCif, savedModelPdb, savedLinkCif, linkId, molecule.molNo, molecule.name, commandCentre]);
 
     const statusColor = statusKind === "error" ? "#e03131" : statusKind === "success" ? "#2f9e44" : "#495057";
 
@@ -353,7 +397,7 @@ const LinkPanel = (props: {
             </div>
             <div style={{ padding: 16 }}>
             <div style={{ marginBottom: 10 }}>
-                <label style={{ display: "block", fontSize: "0.85rem", color: "#495057" }}>Cys SG (from right-click)</label>
+                <label style={{ display: "block", fontSize: "0.85rem", color: "#495057" }}>Cys SG {sgCidSourceLabel ? `(${sgCidSourceLabel})` : "(from right-click)"}</label>
                 <code style={{ fontSize: "0.95rem", color: "#212529" }}>{sgCid}</code>
             </div>
             <div style={{ marginBottom: 10 }}>
@@ -444,29 +488,32 @@ const LinkPanel = (props: {
                     disabled={busy || refmacBusy}
                 >{savedModelCif ? "Close" : "Cancel"}</button>
             </div>
-            {savedModelCif && (
-                <div style={{
-                    marginTop: 10, padding: "8px 10px", background: "#f1f3f5",
-                    borderRadius: 6, fontSize: "0.85rem",
-                }}>
-                    <div style={{ marginBottom: 6, color: "#495057" }}>
-                        Augmented CIF saved. Refine against your data MTZ to pull
-                        SG↔Cβ to canonical distance:
-                    </div>
-                    <button
-                        style={{
-                            padding: "6px 12px", fontSize: "0.9rem",
-                            background: refmacBusy ? "#adb5bd" : "#51cf66",
-                            color: "white", border: "none", borderRadius: 5,
-                            cursor: refmacBusy ? "not-allowed" : "pointer",
-                        }}
-                        onClick={runRefmac}
-                        disabled={refmacBusy}
-                    >
-                        {refmacBusy ? "Running REFMAC5…" : "Refine with REFMAC5…"}
-                    </button>
+            <div style={{
+                marginTop: 10, padding: "8px 10px", background: "#f1f3f5",
+                borderRadius: 6, fontSize: "0.85rem",
+            }}>
+                <div style={{ marginBottom: 6, color: "#495057" }}>
+                    {savedModelCif
+                        ? "Augmented CIF saved. Refine against your data MTZ to pull SG↔Cβ to canonical distance:"
+                        : "Refine the current model against your data MTZ (use before or after declaring the bond):"}
                 </div>
-            )}
+                <button
+                    style={{
+                        padding: "6px 12px", fontSize: "0.9rem",
+                        background: refmacBusy ? "#adb5bd" : "#51cf66",
+                        color: "white", border: "none", borderRadius: 5,
+                        cursor: refmacBusy ? "not-allowed" : "pointer",
+                    }}
+                    onClick={runRefmac}
+                    disabled={refmacBusy}
+                >
+                    {refmacBusy
+                        ? "Running REFMAC5…"
+                        : savedModelCif
+                            ? "Refine with REFMAC5…"
+                            : "Refine with REFMAC5 (uses link CIF if declared)…"}
+                </button>
+            </div>
             {status && (
                 <div style={{ marginTop: 10, fontSize: "0.85rem", color: statusColor }}>{status}</div>
             )}

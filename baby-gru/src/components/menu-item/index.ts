@@ -26,6 +26,7 @@ export { GetMonomer } from "./GetMonomer";
 export { GoTo } from "./GoTo";
 export { ConnectMoleculeToMaps } from "./ConnectMoleculeToMaps";
 export { ImportDictionary, SMILESToLigand } from "./ImportLigandDictionary";
+export { MakeCovalentMenuItem } from "./MakeCovalentMenuItem";
 export { ImportMap } from "./ImportMap";
 export { ImportMapCoefficients } from "./ImportMapCoefficients";
 export { LayoutSettings } from "./LayoutSettings";

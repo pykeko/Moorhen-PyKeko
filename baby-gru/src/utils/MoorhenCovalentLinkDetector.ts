@@ -367,3 +367,32 @@ function amideNitrogenOf(
     }
     return -1;
 }
+
+/**
+ * v0.2.39: scan every carbon in the ligand and return the first one for
+ * which `detectWarheadFamily` succeeds. Used by the menu-driven covalent
+ * declaration flow ("Ligand → Make covalent…") to pre-fill the Cβ atom
+ * BEFORE the user clicks — they only need to confirm or override.
+ *
+ * Family priority follows v0.2.32 plan-doc order: F1 (acrylamide) and F2
+ * (ynamide) are the most common Cys warhead chemistries; F3-F6 are
+ * tried as fallback. The first match wins.
+ *
+ * Returns null if no carbon survives any family's detector.
+ */
+export async function suggestCbAtom(
+    lig: string,
+    atoms: LigandAtom[],
+    bonds: LigandBond[],
+): Promise<DetectionResult | null> {
+    const families: Array<"F1" | "F2" | "F3" | "F4" | "F5" | "F6"> =
+        ["F2", "F1", "F3", "F4", "F5", "F6"];
+    for (const fam of families) {
+        for (let i = 0; i < atoms.length; i++) {
+            if (atoms[i].element !== "C") continue;
+            const det = await detectWarheadFamily(lig, atoms, bonds, i, fam);
+            if (det) return det;
+        }
+    }
+    return null;
+}
