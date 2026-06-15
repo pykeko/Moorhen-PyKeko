@@ -291,9 +291,22 @@ export async function executeCovalentLink(
                     cbInfo.auth_asym_id, cbInfo.auth_seq_id, cbInfo.label_comp_id, cb.atom,
                     bondLengthForLinkEntry(entry), chemLinkId
                 );
+                // Same dedupe logic as the mmdb-reload step: don't add a
+                // second LINK row for the same atom pair.
+                const linkKey = (line: string): string => [
+                    line.substring(12, 16).trim(), line.charAt(21), line.substring(22, 26).trim(),
+                    line.substring(42, 46).trim(), line.charAt(51), line.substring(52, 56).trim(),
+                ].join("|");
+                const newKey = linkKey(linkRecord);
                 const pdbLines = pdbText.split("\n");
-                const firstAtomIdx = pdbLines.findIndex(L => L.startsWith("ATOM") || L.startsWith("HETATM"));
-                pdbLines.splice(firstAtomIdx > 0 ? firstAtomIdx : 1, 0, linkRecord);
+                const alreadyHasLink = pdbLines.some(L =>
+                    (L.startsWith("LINK") || L.startsWith("LINKR")) &&
+                    linkKey(L) === newKey
+                );
+                if (!alreadyHasLink) {
+                    const firstAtomIdx = pdbLines.findIndex(L => L.startsWith("ATOM") || L.startsWith("HETATM"));
+                    pdbLines.splice(firstAtomIdx > 0 ? firstAtomIdx : 1, 0, linkRecord);
+                }
                 const sep = savedCifPath.includes("\\") ? "\\" : "/";
                 const dir = savedCifPath.substring(0, savedCifPath.lastIndexOf(sep));
                 const pdbName = safeName.replace(/\.cif$/i, ".pdb");
@@ -393,11 +406,32 @@ export async function executeCovalentLink(
                 cbInfo.auth_asym_id, cbInfo.auth_seq_id, cbInfo.label_comp_id, cb.atom,
                 bondLengthForLinkEntry(entry)
             );
-            // Inject the LINK record after CRYST1 / before first ATOM.
+            // Dedupe: if an equivalent LINK already exists in the PDB (same
+            // atom1+atom2 endpoints), don't add a duplicate. Without this,
+            // declaring the same pair twice produces two identical LINK rows
+            // in mmdb — not catastrophic (refmac just applies the bond
+            // once) but messy and confuses post-refmac LINK-count metrics.
+            // Key by atom name + chain + residue number on both endpoints
+            // (residue name is implied by the chain+resi).
+            const linkKey = (line: string): string => [
+                line.substring(12, 16).trim(),  // atom1 name (cols 13-16)
+                line.charAt(21),                // chain1
+                line.substring(22, 26).trim(),  // resSeq1
+                line.substring(42, 46).trim(),  // atom2 name (cols 43-46)
+                line.charAt(51),                // chain2
+                line.substring(52, 56).trim(),  // resSeq2
+            ].join("|");
+            const newKey = linkKey(linkRecord);
             const lines = pdbText.split("\n");
-            const firstAtomIdx = lines.findIndex(L => L.startsWith("ATOM") || L.startsWith("HETATM"));
-            const insertAt = firstAtomIdx > 0 ? firstAtomIdx : 1;
-            lines.splice(insertAt, 0, linkRecord);
+            const alreadyHasLink = lines.some(L =>
+                (L.startsWith("LINK") || L.startsWith("LINKR")) &&
+                linkKey(L) === newKey
+            );
+            if (!alreadyHasLink) {
+                const firstAtomIdx = lines.findIndex(L => L.startsWith("ATOM") || L.startsWith("HETATM"));
+                const insertAt = firstAtomIdx > 0 ? firstAtomIdx : 1;
+                lines.splice(insertAt, 0, linkRecord);
+            }
             const augmentedPdb = lines.join("\n");
 
             await commandCentre.current.cootCommand(
