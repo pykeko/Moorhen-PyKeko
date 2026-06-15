@@ -478,6 +478,23 @@ export async function executeCovalentLink(
         console.warn(`[covalent] RSR-aware extras injection failed (non-fatal):`, err);
     }
 
+    // 9. Final post-everything redraw to make sure the viewer reflects the
+    // mod2-modified ligand dict. Step 7 already does this once, but the
+    // step-8a PDB reload (replace_molecule_by_model_from_string) below it
+    // triggers a fresh bond-mesh recompute. If that recompute fires before
+    // the mod2 dict has propagated to the bond renderer, the user sees the
+    // pre-reaction bond orders even though liveDisplayUpdated=true. Force
+    // one more setAtomsDirty+redraw here so the LAST thing the viewer
+    // shows is the mod2-correct state.
+    if (liveDisplayUpdated) {
+        try {
+            molecule.setAtomsDirty(true);
+            await molecule.redraw();
+        } catch (e) {
+            console.warn(`[covalent] final redraw failed (non-fatal):`, e);
+        }
+    }
+
     return {
         ok: true,
         message:

@@ -20,7 +20,7 @@ import { useCommandCentre } from "../../InstanceManager";
 import { usePauseClickAwayListener } from "../../hooks/pauseClickAwayListener";
 import { moorhen } from "../../types/moorhen";
 import { cidToSpec } from "../../utils/utils";
-import { findNearestCysSgToLigand } from "../../utils/MoorhenCovalentLinkSurgery";
+import { findNearestCysSgToLigand, findAtomInModel } from "../../utils/MoorhenCovalentLinkSurgery";
 import { suggestCbAtom } from "../../utils/MoorhenCovalentLinkDetector";
 import { parseChemCompFromDict } from "../../utils/MoorhenCovalentLinkDictParser";
 import { LinkPanel } from "../context-menu/MoorhenCovalentLinkButton";
@@ -59,17 +59,31 @@ export const MakeCovalentMenuItem = () => {
                     return;
                 }
                 const cbShort = `//${spec.chain_id}/${spec.res_no}/${String(spec.atom_name).trim()}`;
-                // Find the molecule the picked atom belongs to. cidToSpec
-                // strips the model index; we have to find the molecule by
-                // walking its chains. Simplest heuristic: the picked
-                // molecule from the atomClicked event has the molNo on it.
-                const molNoFromEvt = evt?.detail?.molecule?.molNo as number | undefined;
-                const molecule = molNoFromEvt != null
-                    ? molecules.find(m => m.molNo === molNoFromEvt)
-                    // Fallback: first molecule (single-molecule case).
-                    : molecules.find(m => !(m as any).isMap);
+                // Resolve the molecule. The picked label's CID has format
+                // `<mol_name>/<model>/<chain>/<resno>(<comp>)/<atom>...`,
+                // so cidToSpec gives us mol_name. Find a molecule whose
+                // `name` matches. Falling back to the first non-map
+                // molecule was wrong for multi-protein scenes — the
+                // mod2/dict update silently targeted the wrong molecule
+                // and the user saw no bond-order change.
+                const molName = (spec as any).mol_name as string | undefined;
+                let molecule = molName
+                    ? molecules.find(m => m.name === molName)
+                    : undefined;
                 if (!molecule) {
-                    setStatus("Could not resolve molecule for picked atom.");
+                    // Buffer-based lookup: walk all molecules and find the
+                    // one whose representations include the picked buffer.
+                    const buf = evt?.detail?.buffer;
+                    if (buf) {
+                        molecule = molecules.find(m =>
+                            ((m as any).representations || []).some((rep: any) =>
+                                (rep?.buffers || []).includes(buf)
+                            )
+                        );
+                    }
+                }
+                if (!molecule) {
+                    setStatus("Could not resolve which molecule the picked atom belongs to.");
                     return;
                 }
                 setStatus("Resolving nearest Cys SG and suggesting Cβ…");
@@ -81,12 +95,19 @@ export const MakeCovalentMenuItem = () => {
                 );
                 const mmcif: string = resp?.data?.result?.result || resp?.data?.result || "";
 
-                // Find the residue 3-letter code from the picked CID. We
-                // already have chain + resNo; the comp can be looked up
-                // from any atom_site row in the model.
-                const compRe = new RegExp(`(?:ATOM|HETATM)\\s+\\S+\\s+\\S+\\s+(?:'([^']+)'|(\\S+))\\s+\\S+\\s+(\\S+)[\\s\\S]*?\\b${spec.res_no}\\b\\s+${spec.chain_id}\\b`);
-                const compMatch = compRe.exec(mmcif);
-                const ligComp = compMatch?.[3] || "";
+                // Find the residue's 3-letter code (comp_id) by looking up
+                // the picked atom in the atom_site loop. findAtomInModel
+                // tokenizes mmCIF rows correctly and returns
+                // label_comp_id — the regex-on-substring approach used
+                // earlier matched whichever residue's resNo+chainId
+                // appeared first in the file, which was almost never the
+                // ligand the user picked.
+                const atomInfo = findAtomInModel(mmcif, {
+                    chain: spec.chain_id,
+                    resNo: spec.res_no as number,
+                    atom: String(spec.atom_name).trim(),
+                });
+                const ligComp = atomInfo?.label_comp_id || "";
 
                 // Look up the closest Cys SG to the picked ligand.
                 let sgCid = "";

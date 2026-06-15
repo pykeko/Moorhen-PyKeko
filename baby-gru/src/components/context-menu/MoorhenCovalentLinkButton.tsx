@@ -342,12 +342,16 @@ export const LinkPanel = (props: {
                 setRefmacBusy(false);
                 return;
             }
-            // Load the refined PDB back into Moorhen.
-            if (res.refinedPdb && api.loadCoordsFromURL) {
+            // Load the refined PDB back into Moorhen. Electron's
+            // renderer can't fetch `file://` from the http://localhost
+            // origin the SPA is served from, so we read the file via
+            // IPC (refinedPdbText is included in the runRefmacat result
+            // as of v0.2.40) and load via loadCoordsFromString.
+            if (res.refinedPdbText && api.loadCoordsFromString) {
                 try {
-                    await api.loadCoordsFromURL(
-                        "file://" + res.refinedPdb,
-                        `refined_${linkId}`
+                    await api.loadCoordsFromString(
+                        res.refinedPdbText,
+                        `refined_${linkId || molecule.name || "model"}`
                     );
                 } catch (e: any) {
                     console.warn("[covalent] refined-model reload failed:", e);
