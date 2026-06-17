@@ -496,6 +496,31 @@ export function createControlApi(ctx: Ctx) {
       return await ctrl.runFindLigand(opts);
     },
 
+    // PyKeko v0.2.45 — shell escape, mirrors the in-app console's `!`
+    // prefix. Runs the command via the user's login shell in the active
+    // effective cwd (see setCwd). Desktop-only. Returns
+    // { ok, code, signal, stdout, stderr, cmd, cwd, killed, timedOut }.
+    async runShell(cmd: string, opts?: { cwd?: string; timeoutMs?: number }) {
+      const ctrl: any = (typeof window !== "undefined") ? (window as any).__moorhenControl : null;
+      if (!ctrl?.runShell) {
+        return { ok: false, error: "runShell IPC bridge unavailable (PyKeko desktop only)" };
+      }
+      return await ctrl.runShell(cmd, opts || {});
+    },
+
+    // PyKeko v0.2.45 — change/read the active working directory. After
+    // setCwd, all relative save targets go to the new dir.
+    async setCwd(p: string) {
+      const ctrl: any = (typeof window !== "undefined") ? (window as any).__moorhenControl : null;
+      if (!ctrl?.setCwd) return { ok: false, error: "setCwd IPC bridge unavailable (PyKeko desktop only)" };
+      return await ctrl.setCwd(p);
+    },
+    async getCwd() {
+      const ctrl: any = (typeof window !== "undefined") ? (window as any).__moorhenControl : null;
+      if (!ctrl?.getCwd) return { ok: false, error: "getCwd IPC bridge unavailable (PyKeko desktop only)" };
+      return await ctrl.getCwd();
+    },
+
     // PyKeko v0.2.45 — JS REPL evaluator.
     //
     // Evaluates a JS source string in the renderer's global scope and returns

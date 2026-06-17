@@ -73,14 +73,30 @@ export const MoorhenLogConsole = () => {
     const positionRef = useRef<number>(0);
     const scrollRef = useRef<HTMLDivElement | null>(null);
 
-    // REPL state (v0.2.45). The input is JS; PyMOL mode lives in the
-    // Interactive Scripting modal for now.
+    // REPL state (v0.2.45). Modes: "js" / "pml". `!` prefix overrides
+    // either mode and routes to the shell channel.
     const [replInput, setReplInput] = useState<string>("");
+    const [replMode, setReplMode] = useState<"js" | "pml">(
+        (typeof window !== "undefined" && window.localStorage?.getItem("pykeko.logConsole.replMode") === "pml") ? "pml" : "js"
+    );
+    useEffect(() => {
+        try { window.localStorage?.setItem("pykeko.logConsole.replMode", replMode); } catch {}
+    }, [replMode]);
     const [busy, setBusy] = useState<boolean>(false);
+    const [cwd, setCwd] = useState<string>("");
     const historyRef = useRef<string[]>(loadHistory());
     const historyIdxRef = useRef<number>(historyRef.current.length); // points past end
     const draftRef = useRef<string>("");
     const inputRef = useRef<HTMLInputElement | null>(null);
+
+    // Initial cwd fetch — populates the panel header so the user can
+    // see where files are being written. Re-queried after every `!cd`.
+    useEffect(() => {
+        const api: any = (typeof window !== "undefined") ? (window as any).MoorhenControlApi : null;
+        if (api?.getCwd) {
+            api.getCwd().then((r: any) => { if (r?.ok && r.cwd) setCwd(r.cwd); }).catch(() => {});
+        }
+    }, []);
 
     const appendLocal = useCallback((level: ParsedLine["level"], text: string) => {
         setLines(prev => [...prev, { raw: text, text, level } as ParsedLine].slice(-MAX_LINES));
@@ -89,7 +105,11 @@ export const MoorhenLogConsole = () => {
     const runRepl = useCallback(async (src: string) => {
         if (!src.trim()) return;
         const api: any = (typeof window !== "undefined") ? (window as any).MoorhenControlApi : null;
-        appendLocal("repl-in", `> ${src}`);
+        // `!` prefix always means shell, regardless of current mode.
+        const isShell = src.trimStart().startsWith("!");
+        const usePml = !isShell && replMode === "pml";
+        const prompt = isShell ? "!" : (usePml ? "p>" : ">");
+        appendLocal("repl-in", `${prompt} ${isShell ? src.trimStart().slice(1).trimStart() : src}`);
         // Push to history (dedupe consecutive duplicates).
         const h = historyRef.current;
         if (h.length === 0 || h[h.length - 1] !== src) {
@@ -99,24 +119,65 @@ export const MoorhenLogConsole = () => {
         }
         historyIdxRef.current = historyRef.current.length;
         draftRef.current = "";
-        if (!api?.evalJs) {
+        if (!api) {
             appendLocal("repl-err", "REPL unavailable — MoorhenControlApi not mounted yet");
             return;
         }
         setBusy(true);
         try {
-            const r = await api.evalJs(src);
-            if (r?.ok) {
-                appendLocal("repl-out", r.repr ?? "undefined");
+            if (isShell) {
+                if (!api.runShell) { appendLocal("repl-err", "shell unavailable"); return; }
+                const cmd = src.trimStart().slice(1).trimStart();
+                // Special-case `cd` (and `cd <path>`): a fresh subshell can't
+                // change the parent's cwd, so a literal `!cd ~` from the
+                // REPL would have no visible effect. Route to setCwd instead
+                // so it mutates the process-wide effectiveCwd that every save
+                // handler reads from. Other commands run unchanged.
+                const cdMatch = /^cd(?:\s+(.+?))?\s*$/.exec(cmd);
+                if (cdMatch && api.setCwd) {
+                    const target = (cdMatch[1] || "").trim() || "~";
+                    const r = await api.setCwd(target);
+                    if (r?.ok) {
+                        setCwd(r.cwd);
+                        appendLocal("repl-out", `cwd → ${r.cwd}`);
+                    } else {
+                        appendLocal("repl-err", r?.error || "cd failed");
+                    }
+                    return;
+                }
+                const r = await api.runShell(cmd);
+                if (r?.ok) {
+                    if (r.stdout) appendLocal("repl-out", r.stdout.replace(/\n+$/, ""));
+                    if (r.stderr) appendLocal("repl-err", r.stderr.replace(/\n+$/, ""));
+                    if (!r.stdout && !r.stderr) appendLocal("repl-out", `(exit ${r.code})`);
+                } else {
+                    if (r?.stdout) appendLocal("repl-out", r.stdout.replace(/\n+$/, ""));
+                    if (r?.stderr) appendLocal("repl-err", r.stderr.replace(/\n+$/, ""));
+                    appendLocal("repl-err", r?.timedOut ? "(shell command timed out)" : r?.error ? `error: ${r.error}` : `(exit ${r?.code ?? "?"})`);
+                }
+            } else if (usePml) {
+                if (!api.runPymol) { appendLocal("repl-err", "PyMOL mode unavailable"); return; }
+                try {
+                    await api.runPymol(src);
+                    appendLocal("repl-out", "ok");
+                } catch (e: any) {
+                    appendLocal("repl-err", `PyMOL: ${String(e?.message || e)}`);
+                }
             } else {
-                appendLocal("repl-err", r?.error || "(unknown error)");
+                if (!api.evalJs) { appendLocal("repl-err", "JS eval unavailable"); return; }
+                const r = await api.evalJs(src);
+                if (r?.ok) {
+                    appendLocal("repl-out", r.repr ?? "undefined");
+                } else {
+                    appendLocal("repl-err", r?.error || "(unknown error)");
+                }
             }
         } catch (e: any) {
             appendLocal("repl-err", String(e?.message || e));
         } finally {
             setBusy(false);
         }
-    }, [appendLocal]);
+    }, [appendLocal, replMode]);
 
     const onReplKey = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Enter") {
@@ -299,6 +360,26 @@ export const MoorhenLogConsole = () => {
                             Clear view
                         </button>
                     </div>
+                    {/* Active cwd indicator — files saved by the in-app
+                        handlers (covalent link, save-bundle, etc.) land here.
+                        Changes when the user runs `!cd <path>`. */}
+                    {cwd && (
+                        <div
+                            title="Active working directory — !cd <path> to change. Files saved/loaded by PyKeko default to this directory."
+                            style={{
+                                padding: "2px 10px",
+                                background: "rgba(0,0,0,0.15)",
+                                color: "#74c0fc",
+                                fontSize: "11px",
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                borderBottom: "1px solid #343a40",
+                            }}
+                        >
+                            cwd: {cwd}
+                        </div>
+                    )}
                     <div
                         ref={scrollRef}
                         style={{
@@ -327,8 +408,32 @@ export const MoorhenLogConsole = () => {
                         borderTop: "1px solid #343a40",
                         background: "rgba(0,0,0,0.25)",
                     }}>
-                        <span style={{ color: busy ? "#ffd43b" : "#b197fc", fontWeight: 700, userSelect: "none" }}>
-                            {busy ? "…" : ">"}
+                        <select
+                            value={replMode}
+                            onChange={(e) => setReplMode(e.target.value as "js" | "pml")}
+                            disabled={busy}
+                            title="Input mode (! prefix always runs as shell)"
+                            style={{
+                                background: "#1a1d21",
+                                color: "#e9ecef",
+                                border: "1px solid #495057",
+                                borderRadius: 3,
+                                padding: "1px 4px",
+                                fontFamily: "inherit",
+                                fontSize: "11px",
+                                cursor: "pointer",
+                            }}
+                        >
+                            <option value="js">JS</option>
+                            <option value="pml">PyMOL</option>
+                        </select>
+                        <span style={{
+                            color: busy ? "#ffd43b"
+                                : (replInput.trimStart().startsWith("!") ? "#ff8787"
+                                : (replMode === "pml" ? "#b197fc" : "#b197fc")),
+                            fontWeight: 700, userSelect: "none", minWidth: 12,
+                        }}>
+                            {busy ? "…" : (replInput.trimStart().startsWith("!") ? "!" : (replMode === "pml" ? "p>" : ">"))}
                         </span>
                         <input
                             ref={inputRef}
@@ -340,7 +445,11 @@ export const MoorhenLogConsole = () => {
                             spellCheck={false}
                             autoCapitalize="off"
                             autoCorrect="off"
-                            placeholder='JS — try: MoorhenControlApi.listMolecules?.() ?? "Bridge not ready"'
+                            placeholder={
+                                replMode === "pml"
+                                    ? 'PyMOL — try: color red, //A   (! prefix runs as shell)'
+                                    : 'JS — try: MoorhenControlApi.listMolecules?.()   (! prefix runs as shell)'
+                            }
                             style={{
                                 flex: 1,
                                 padding: "3px 6px",
