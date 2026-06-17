@@ -520,6 +520,19 @@ export function createControlApi(ctx: Ctx) {
       if (!ctrl?.getCwd) return { ok: false, error: "getCwd IPC bridge unavailable (PyKeko desktop only)" };
       return await ctrl.getCwd();
     },
+    // PyKeko v0.2.45 — `!export NAME=value` capture. Persists into
+    // process.env so subsequent shell + spawn-helper invocations see it.
+    async setEnv(arg: string) {
+      const ctrl: any = (typeof window !== "undefined") ? (window as any).__moorhenControl : null;
+      if (!ctrl?.setEnv) return { ok: false, error: "setEnv IPC bridge unavailable (PyKeko desktop only)" };
+      return await ctrl.setEnv(arg);
+    },
+    // PyKeko v0.2.45 — directory stack for !pushd/!popd/!dirs.
+    async cwdStack(action: "push" | "pop" | "list", p?: string) {
+      const ctrl: any = (typeof window !== "undefined") ? (window as any).__moorhenControl : null;
+      if (!ctrl?.cwdStack) return { ok: false, error: "cwdStack IPC bridge unavailable (PyKeko desktop only)" };
+      return await ctrl.cwdStack(action, p);
+    },
 
     // PyKeko v0.2.45 — JS REPL evaluator.
     //

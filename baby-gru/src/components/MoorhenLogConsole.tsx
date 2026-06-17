@@ -128,24 +128,89 @@ export const MoorhenLogConsole = () => {
             if (isShell) {
                 if (!api.runShell) { appendLocal("repl-err", "shell unavailable"); return; }
                 const cmd = src.trimStart().slice(1).trimStart();
-                // Special-case `cd` (and `cd <path>`): a fresh subshell can't
-                // change the parent's cwd, so a literal `!cd ~` from the
-                // REPL would have no visible effect. Route to setCwd instead
-                // so it mutates the process-wide effectiveCwd that every save
-                // handler reads from. Other commands run unchanged.
+
+                // Special-case shell builtins whose effect on the *running*
+                // shell wouldn't survive a one-shot subshell: cd, export,
+                // pushd/popd/dirs, clear. Each routes to a dedicated IPC
+                // handler that mutates process-wide state (cwd / env /
+                // cwdStack) so subsequent !-shell commands AND the
+                // refmac5/findligand/acedrg spawn helpers all see it.
+
+                // cd / cd <path> -> setCwd
                 const cdMatch = /^cd(?:\s+(.+?))?\s*$/.exec(cmd);
                 if (cdMatch && api.setCwd) {
                     const target = (cdMatch[1] || "").trim() || "~";
                     const r = await api.setCwd(target);
+                    if (r?.ok) { setCwd(r.cwd); appendLocal("repl-out", `cwd → ${r.cwd}`); }
+                    else appendLocal("repl-err", r?.error || "cd failed");
+                    return;
+                }
+
+                // export NAME=value | export NAME -> setEnv
+                const exportMatch = /^export\s+(.+)$/.exec(cmd);
+                if (exportMatch && api.setEnv) {
+                    const r = await api.setEnv(exportMatch[1].trim());
                     if (r?.ok) {
-                        setCwd(r.cwd);
-                        appendLocal("repl-out", `cwd → ${r.cwd}`);
+                        const disp = (r.value && r.value.length > 200) ? r.value.slice(0, 200) + "…" : (r.value ?? "");
+                        appendLocal("repl-out", r.read ? `${r.name}=${disp}` : `export ${r.name}=${disp}`);
                     } else {
-                        appendLocal("repl-err", r?.error || "cd failed");
+                        appendLocal("repl-err", r?.error || "export failed");
                     }
                     return;
                 }
-                const r = await api.runShell(cmd);
+
+                // pushd <path> / popd / dirs -> cwdStack
+                const pushdMatch = /^pushd(?:\s+(.+?))?\s*$/.exec(cmd);
+                if (pushdMatch && api.cwdStack) {
+                    const target = (pushdMatch[1] || "").trim();
+                    if (!target) { appendLocal("repl-err", "pushd needs a path"); return; }
+                    const r = await api.cwdStack("push", target);
+                    if (r?.ok) {
+                        setCwd(r.cwd);
+                        appendLocal("repl-out", `pushd → ${r.cwd}  (stack: ${r.stack.join(" ")})`);
+                    } else {
+                        appendLocal("repl-err", r?.error || "pushd failed");
+                    }
+                    return;
+                }
+                if (/^popd\s*$/.test(cmd) && api.cwdStack) {
+                    const r = await api.cwdStack("pop");
+                    if (r?.ok) {
+                        setCwd(r.cwd);
+                        appendLocal("repl-out", `popd → ${r.cwd}  (stack: ${r.stack.join(" ")})`);
+                    } else {
+                        appendLocal("repl-err", r?.error || "popd failed");
+                    }
+                    return;
+                }
+                if (/^dirs\s*$/.test(cmd) && api.cwdStack) {
+                    const r = await api.cwdStack("list");
+                    if (r?.ok) appendLocal("repl-out", r.stack.join("\n"));
+                    else appendLocal("repl-err", r?.error || "dirs failed");
+                    return;
+                }
+
+                // clear / cls -> empty local scrollback (matches DevTools).
+                if (/^(?:clear|cls)\s*$/.test(cmd)) {
+                    setLines([]);
+                    return;
+                }
+
+                // tty-needing commands hang silently in a no-tty subshell until
+                // the 30 s timeout kills them. Warn and refuse rather than let
+                // the user think PyKeko froze.
+                const ttyBin = /^(?:vim?|nvim|emacs|nano|less|more|man|ssh|sftp|telnet|htop|top|tmux|screen|psql|mysql|sqlite3)\b/;
+                if (ttyBin.test(cmd)) {
+                    const bin = cmd.match(/^(\S+)/)?.[1] || "this command";
+                    appendLocal("repl-err", `${bin} needs a tty — open Terminal for that. (Forced through anyway? Type !-${cmd})`);
+                    return;
+                }
+                // Escape hatch for "I really do want to run it": prefix the
+                // command with a dash, e.g. `!-vim --version` runs through.
+                let finalCmd = cmd;
+                if (cmd.startsWith("-")) finalCmd = cmd.slice(1);
+
+                const r = await api.runShell(finalCmd);
                 if (r?.ok) {
                     if (r.stdout) appendLocal("repl-out", r.stdout.replace(/\n+$/, ""));
                     if (r.stderr) appendLocal("repl-err", r.stderr.replace(/\n+$/, ""));
