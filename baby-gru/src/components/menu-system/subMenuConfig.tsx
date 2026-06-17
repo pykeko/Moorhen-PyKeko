@@ -671,6 +671,22 @@ export const subMenuMap: SubMenuMap = {
                 content: MenuItems.MakeCovalentMenuItem,
             },
             {
+                id: "fit-ligand-here",
+                label: "Find ligand here...",
+                type: "popover",
+                keywords: ["fit", "ligand", "rsr", "density", "blob"],
+                description: "Fit a ligand into the density blob nearest the current view centre",
+                content: MenuItems.FitLigandHere,
+            },
+            {
+                id: "fit-ligand-search",
+                label: "Search for ligand sites...",
+                type: "popover",
+                keywords: ["fit", "ligand", "search", "multi", "blob"],
+                description: "Search the whole map for ligand-shaped density blobs and fit poses",
+                content: MenuItems.FitLigandSearch,
+            },
+            {
                 id: "centre-on-ligand",
                 label: "Centre on ligand...",
                 type: "popover",

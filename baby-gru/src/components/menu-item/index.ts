@@ -27,6 +27,8 @@ export { GoTo } from "./GoTo";
 export { ConnectMoleculeToMaps } from "./ConnectMoleculeToMaps";
 export { ImportDictionary, SMILESToLigand } from "./ImportLigandDictionary";
 export { MakeCovalentMenuItem } from "./MakeCovalentMenuItem";
+export { FitLigandHere } from "./FitLigandHere";
+export { FitLigandSearch } from "./FitLigandSearch";
 export { ImportMap } from "./ImportMap";
 export { ImportMapCoefficients } from "./ImportMapCoefficients";
 export { LayoutSettings } from "./LayoutSettings";
