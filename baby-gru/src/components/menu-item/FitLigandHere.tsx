@@ -45,7 +45,15 @@ export const FitLigandHere = () => {
 
     useEffect(() => {
         if (molecules.length > 0 && !proteinSelectRef.current?.value) {
-            const sorted = [...molecules].sort((a, b) => ((b as any).atomCount || 0) - ((a as any).atomCount || 0));
+            // Filter out zombie 0-atom molecules. `deleteCid('/*/*/*/*', m)`
+            // empties atoms but doesn't drop the molecule from the slice —
+            // smoke tests + iterated user workflows accumulate them, and
+            // the smallest-atom-count heuristic would otherwise pick one
+            // and produce a header-only PDB export that fails the comp_id
+            // extraction silently.
+            const real = molecules.filter(m => ((m as any).atomCount || 0) > 0);
+            if (real.length === 0) return;
+            const sorted = [...real].sort((a, b) => ((b as any).atomCount || 0) - ((a as any).atomCount || 0));
             if (proteinSelectRef.current) (proteinSelectRef.current as any).value = String(sorted[0].molNo);
             if (ligandSelectRef.current) (ligandSelectRef.current as any).value = String(sorted[sorted.length - 1].molNo);
         }
@@ -102,12 +110,39 @@ export const FitLigandHere = () => {
                 setBusy(false);
                 return;
             }
+            // Bail early if the ligand export is suspiciously short (a
+            // 0-atom molecule produces just the header). Otherwise the
+            // user sees a useless "no chem_comp dict cached for ligand ''"
+            // message later. Check for any ATOM/HETATM row.
+            const hasAtomRows = /^(?:ATOM|HETATM)/m.test(ligandPdbText);
+            if (!hasAtomRows) {
+                dispatch(enqueueSnackbar({
+                    message: `Ligand molecule ${ligandMolNo} has no atoms. Pick a different ligand.`,
+                    variant: "error",
+                    autoHideDuration: 8000,
+                }));
+                setBusy(false);
+                return;
+            }
 
             // 3. Identify the ligand's comp_id (3-letter code) from its
             // PDB and pull the cached chem_comp dict from the molecule.
-            const compMatch = ligandPdbText.match(/^HETATM\s+\S+\s+\S+\s+(\S+)/m) ||
-                              ligandPdbText.match(/^HETATM\s.{12,17}(\S{3})/m);
+            // Match BOTH HETATM and ATOM rows — SMILES-generated ligands
+            // emit HETATM but PDB-loaded standalone ligands can be ATOM.
+            const compMatch = ligandPdbText.match(/^(?:HETATM|ATOM)\s+\S+\s+\S+\s+(\S+)/m) ||
+                              ligandPdbText.match(/^(?:HETATM|ATOM)\s.{12,17}(\S{3})/m);
             const compId = compMatch?.[1]?.trim() || "";
+            if (!compId) {
+                console.warn("[fit-ligand] could not extract comp_id from ligand PDB. First 3 lines:",
+                    ligandPdbText.split("\n").slice(0, 3));
+                dispatch(enqueueSnackbar({
+                    message: "Could not extract 3-letter code from ligand PDB. Check that the ligand is a standard chem_comp.",
+                    variant: "error",
+                    autoHideDuration: 8000,
+                }));
+                setBusy(false);
+                return;
+            }
             const ligandMol = molecules.find(m => m.molNo === ligandMolNo);
             const ligandCifText: string = (ligandMol as any)?.ligandDicts?.[compId] || "";
             if (!ligandCifText) {
