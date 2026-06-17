@@ -495,9 +495,114 @@ export function createControlApi(ctx: Ctx) {
       }
       return await ctrl.runFindLigand(opts);
     },
+
+    // PyKeko v0.2.45 — JS REPL evaluator.
+    //
+    // Evaluates a JS source string in the renderer's global scope and returns
+    // a JSON-safe summary of the result. Used by both the in-app console's
+    // command line and the moorhen_eval MCP tool.
+    //
+    // - Tries expression form first ("return (src);") so single expressions
+    //   like `1+1` or `MoorhenControlApi` produce a value the way DevTools
+    //   would. Falls back to statement form ("src;") for multi-statement
+    //   scripts.
+    // - Wrapped in an async function so `await` works.
+    // - The scope is the renderer, NOT the main process — same as DevTools,
+    //   no fs/child_process/etc. The eval can reach window.MoorhenControlApi
+    //   and any other globals; it cannot touch the Electron main side.
+    // - The serializer caps depth/length so huge objects don't shovel
+    //   megabytes through IPC. The local REPL receives the same JSON-safe
+    //   summary (intentionally — keeps the surface uniform between local
+    //   and MCP callers).
+    async evalJs(src: string) {
+      if (typeof src !== "string" || !src.trim()) {
+        return { ok: false, error: "empty input" };
+      }
+      const AsyncFn: any = Object.getPrototypeOf(async function () {}).constructor;
+      let fn: any;
+      // Expression form first (so `1+1` / `foo` produce a return value).
+      try {
+        fn = new AsyncFn(`"use strict"; return (${src}\n);`);
+      } catch (e) {
+        // Fall back to statement form (handles `var x = ...; x + 1` style).
+        try {
+          fn = new AsyncFn(`"use strict"; ${src}`);
+        } catch (e2: any) {
+          return { ok: false, error: "SyntaxError: " + String(e2?.message || e2) };
+        }
+      }
+      try {
+        const result = await fn();
+        return { ok: true, ...summarizeForRepl(result) };
+      } catch (e: any) {
+        return { ok: false, error: String(e?.stack || e?.message || e) };
+      }
+    },
   };
 
   return api;
+}
+
+// JSON-safe summary of a REPL value, capped so a returned huge object
+// can't shovel megabytes through IPC. Mirrors the shape DevTools prints:
+// "kind" = type name, "repr" = printable string, "json" = the cleaned
+// value when round-trip-safe (so the local REPL can render objects with
+// some structure; MCP callers can ignore json and use repr).
+function summarizeForRepl(v: any) {
+  if (v === undefined) return { kind: "undefined", repr: "undefined", json: null };
+  if (v === null) return { kind: "null", repr: "null", json: null };
+  const t = typeof v;
+  if (t === "string") return { kind: "string", repr: JSON.stringify(v), json: v };
+  if (t === "number" || t === "boolean" || t === "bigint")
+    return { kind: t, repr: String(v), json: t === "bigint" ? String(v) : v };
+  if (t === "function") {
+    const name = v.name || "<anonymous>";
+    return { kind: "function", repr: `[Function: ${name}]`, json: null };
+  }
+  if (t === "symbol") return { kind: "symbol", repr: String(v), json: null };
+  // Object/array — try JSON.stringify with depth+length cap.
+  const MAX_LEN = 64 * 1024;
+  try {
+    const seen = new WeakSet();
+    const trim = (val: any, depth: number): any => {
+      if (depth > 6) return "[…]";
+      if (val === null || typeof val !== "object") {
+        if (typeof val === "function") return `[Function: ${val.name || "<anonymous>"}]`;
+        if (typeof val === "bigint") return String(val);
+        if (typeof val === "symbol") return String(val);
+        return val;
+      }
+      if (seen.has(val)) return "[Circular]";
+      seen.add(val);
+      if (Array.isArray(val)) {
+        return val.slice(0, 64).map((x) => trim(x, depth + 1));
+      }
+      // DOM nodes / WebAssembly / etc. — just describe.
+      if (val.nodeType && typeof val.nodeName === "string") {
+        return `[${val.nodeName} ${val.id ? "#" + val.id : ""}]`;
+      }
+      if (val.constructor && val.constructor.name && val.constructor.name !== "Object") {
+        // Embind C++ objects, MoorhenMolecule, etc. — keep the type name +
+        // a few enumerable own props so the REPL is informative.
+        const obj: any = { __type: val.constructor.name };
+        for (const k of Object.keys(val).slice(0, 32)) {
+          try { obj[k] = trim(val[k], depth + 1); } catch (e) { obj[k] = "[unreadable]"; }
+        }
+        return obj;
+      }
+      const out: any = {};
+      for (const k of Object.keys(val).slice(0, 64)) {
+        try { out[k] = trim(val[k], depth + 1); } catch (e) { out[k] = "[unreadable]"; }
+      }
+      return out;
+    };
+    const trimmed = trim(v, 0);
+    let repr = JSON.stringify(trimmed, null, 2);
+    if (repr && repr.length > MAX_LEN) repr = repr.slice(0, MAX_LEN) + "\n… (truncated)";
+    return { kind: Array.isArray(v) ? "array" : (v.constructor?.name || "object"), repr, json: trimmed };
+  } catch (e: any) {
+    return { kind: "object", repr: "[unserialisable: " + String(e?.message || e) + "]", json: null };
+  }
 }
 
 export type MoorhenControlApi = ReturnType<typeof createControlApi>;

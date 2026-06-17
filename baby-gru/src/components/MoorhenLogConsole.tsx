@@ -18,7 +18,23 @@ interface ParsedLine {
     raw: string;
     timestamp?: string;
     text: string;
-    level: "error" | "warn" | "info" | "debug" | "ipc";
+    level: "error" | "warn" | "info" | "debug" | "ipc" | "repl-in" | "repl-out" | "repl-err";
+}
+
+// REPL history — persisted across sessions via localStorage. Bounded list
+// (LIFO sense: newest pushed at end; up-arrow walks backward).
+const HISTORY_KEY = "pykeko.logConsole.replHistory";
+const HISTORY_MAX = 200;
+function loadHistory(): string[] {
+    try {
+        const s = (typeof window !== "undefined") ? window.localStorage?.getItem(HISTORY_KEY) : null;
+        return s ? JSON.parse(s) : [];
+    } catch { return []; }
+}
+function saveHistory(h: string[]) {
+    try {
+        if (typeof window !== "undefined") window.localStorage?.setItem(HISTORY_KEY, JSON.stringify(h.slice(-HISTORY_MAX)));
+    } catch {}
 }
 
 // Strip ISO timestamp Electron prepends, and classify the line so we
@@ -56,6 +72,75 @@ export const MoorhenLogConsole = () => {
     const [filter, setFilter] = useState<string>("");
     const positionRef = useRef<number>(0);
     const scrollRef = useRef<HTMLDivElement | null>(null);
+
+    // REPL state (v0.2.45). The input is JS; PyMOL mode lives in the
+    // Interactive Scripting modal for now.
+    const [replInput, setReplInput] = useState<string>("");
+    const [busy, setBusy] = useState<boolean>(false);
+    const historyRef = useRef<string[]>(loadHistory());
+    const historyIdxRef = useRef<number>(historyRef.current.length); // points past end
+    const draftRef = useRef<string>("");
+    const inputRef = useRef<HTMLInputElement | null>(null);
+
+    const appendLocal = useCallback((level: ParsedLine["level"], text: string) => {
+        setLines(prev => [...prev, { raw: text, text, level } as ParsedLine].slice(-MAX_LINES));
+    }, []);
+
+    const runRepl = useCallback(async (src: string) => {
+        if (!src.trim()) return;
+        const api: any = (typeof window !== "undefined") ? (window as any).MoorhenControlApi : null;
+        appendLocal("repl-in", `> ${src}`);
+        // Push to history (dedupe consecutive duplicates).
+        const h = historyRef.current;
+        if (h.length === 0 || h[h.length - 1] !== src) {
+            h.push(src);
+            if (h.length > HISTORY_MAX) h.splice(0, h.length - HISTORY_MAX);
+            saveHistory(h);
+        }
+        historyIdxRef.current = historyRef.current.length;
+        draftRef.current = "";
+        if (!api?.evalJs) {
+            appendLocal("repl-err", "REPL unavailable — MoorhenControlApi not mounted yet");
+            return;
+        }
+        setBusy(true);
+        try {
+            const r = await api.evalJs(src);
+            if (r?.ok) {
+                appendLocal("repl-out", r.repr ?? "undefined");
+            } else {
+                appendLocal("repl-err", r?.error || "(unknown error)");
+            }
+        } catch (e: any) {
+            appendLocal("repl-err", String(e?.message || e));
+        } finally {
+            setBusy(false);
+        }
+    }, [appendLocal]);
+
+    const onReplKey = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            const src = replInput;
+            setReplInput("");
+            runRepl(src);
+        } else if (e.key === "ArrowUp") {
+            const h = historyRef.current;
+            if (h.length === 0) return;
+            if (historyIdxRef.current === h.length) draftRef.current = replInput; // save in-progress
+            const next = Math.max(0, historyIdxRef.current - 1);
+            historyIdxRef.current = next;
+            setReplInput(h[next]);
+            e.preventDefault();
+        } else if (e.key === "ArrowDown") {
+            const h = historyRef.current;
+            if (historyIdxRef.current >= h.length) return;
+            const next = historyIdxRef.current + 1;
+            historyIdxRef.current = next;
+            setReplInput(next >= h.length ? draftRef.current : h[next]);
+            e.preventDefault();
+        }
+    }, [replInput, runRepl]);
 
     // Initial fetch + poll.
     useEffect(() => {
@@ -113,6 +198,16 @@ export const MoorhenLogConsole = () => {
         }
     }, [lines, expanded]);
 
+    // Focus the REPL when the panel opens (so the user can start typing
+    // immediately after ⌘`, matching DevTools behaviour).
+    useEffect(() => {
+        if (expanded && inputRef.current) {
+            // setTimeout so it survives the same-tick keydown that opened us.
+            const t = setTimeout(() => inputRef.current?.focus(), 0);
+            return () => clearTimeout(t);
+        }
+    }, [expanded]);
+
     if (!available) return null;
 
     const visible = (showAll ? lines : lines.filter(L => !isNoisy(L)))
@@ -125,6 +220,9 @@ export const MoorhenLogConsole = () => {
         info: "#e9ecef",
         debug: "#868e96",
         ipc: "#74c0fc",
+        "repl-in": "#b197fc",
+        "repl-out": "#69db7c",
+        "repl-err": "#ff8787",
     }[level]);
 
     return (
@@ -219,6 +317,45 @@ export const MoorhenLogConsole = () => {
                                 {L.text}
                             </div>
                         ))}
+                    </div>
+
+                    {/* v0.2.45 REPL — JS eval in renderer scope. Same
+                        evaluator backs the moorhen_eval MCP tool. */}
+                    <div style={{
+                        display: "flex", alignItems: "center", gap: 6,
+                        padding: "4px 10px",
+                        borderTop: "1px solid #343a40",
+                        background: "rgba(0,0,0,0.25)",
+                    }}>
+                        <span style={{ color: busy ? "#ffd43b" : "#b197fc", fontWeight: 700, userSelect: "none" }}>
+                            {busy ? "…" : ">"}
+                        </span>
+                        <input
+                            ref={inputRef}
+                            type="text"
+                            value={replInput}
+                            disabled={busy}
+                            onChange={(e) => { setReplInput(e.target.value); historyIdxRef.current = historyRef.current.length; }}
+                            onKeyDown={onReplKey}
+                            spellCheck={false}
+                            autoCapitalize="off"
+                            autoCorrect="off"
+                            placeholder='JS — try: MoorhenControlApi.listMolecules?.() ?? "Bridge not ready"'
+                            style={{
+                                flex: 1,
+                                padding: "3px 6px",
+                                background: "#101216",
+                                color: "#e9ecef",
+                                border: "1px solid #495057",
+                                borderRadius: 3,
+                                fontFamily: "inherit",
+                                fontSize: "11.5px",
+                                outline: "none",
+                            }}
+                        />
+                        <span style={{ color: "#5c5f66", fontSize: "10px", whiteSpace: "nowrap" }}>
+                            ↑↓ history · Enter run
+                        </span>
                     </div>
                 </div>
             )}
