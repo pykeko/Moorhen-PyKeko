@@ -462,6 +462,39 @@ export function createControlApi(ctx: Ctx) {
       }
       return await ctrl.pickMtzFile();
     },
+
+    /**
+     * Spawn CCP4's `findligand` (Coot 0.9 desktop's ligand-fit) to search
+     * a map for ligand-shaped density blobs. Replacement for the broken
+     * WASM fit_ligand_right_here / fit_ligand bindings in v0.2.41.
+     *
+     * Caller responsibilities: serialize the protein + ligand to PDB
+     * text (via molecule_to_PDB_string) and the ligand's chem_comp dict
+     * to CIF text. The MTZ comes in as a disk path (via pickMtzFile()).
+     *
+     * Returns { ok, fittedLigands, workDir, logPath, log } where
+     * fittedLigands is an array of { pdbText, path, clusterIdx,
+     * sampleIdx }. Use loadCoordsFromString to display each.
+     */
+    async runFindLigand(opts: {
+      proteinPdbText: string;
+      mtzPath: string;
+      fCol?: string;
+      phiCol?: string;
+      ligandPdbText: string;
+      ligandCifText: string;
+      sigma?: number;
+      clusters?: number;
+      samples?: number;
+      flexible?: boolean;
+      absoluteLevel?: number;
+    }) {
+      const ctrl: any = (typeof window !== "undefined") ? (window as any).__moorhenControl : null;
+      if (!ctrl?.runFindLigand) {
+        return { ok: false, error: "runFindLigand IPC bridge unavailable (PyKeko desktop only)" };
+      }
+      return await ctrl.runFindLigand(opts);
+    },
   };
 
   return api;

@@ -672,19 +672,11 @@ export const subMenuMap: SubMenuMap = {
             },
             {
                 id: "fit-ligand-here",
-                label: "Find ligand here...",
+                label: "Find ligand sites...",
                 type: "popover",
-                keywords: ["fit", "ligand", "rsr", "density", "blob"],
-                description: "Fit a ligand into the density blob nearest the current view centre",
+                keywords: ["fit", "ligand", "find", "density", "blob", "findligand", "search"],
+                description: "Search the map for ligand-shaped density blobs (CCP4 findligand)",
                 content: MenuItems.FitLigandHere,
-            },
-            {
-                id: "fit-ligand-search",
-                label: "Search for ligand sites...",
-                type: "popover",
-                keywords: ["fit", "ligand", "search", "multi", "blob"],
-                description: "Search the whole map for ligand-shaped density blobs and fit poses",
-                content: MenuItems.FitLigandSearch,
             },
             {
                 id: "centre-on-ligand",
