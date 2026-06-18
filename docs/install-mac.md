@@ -23,10 +23,17 @@ $99/year for a Developer ID certificate.
   - Sequoia (macOS 14) might work but is not tested.
   - Intel Macs are not supported by this build — see [Other architectures](#other-architectures) below.
 - **About 350 MB free disk space** (the app is ~160 MB on disk after install
-  as of v0.2.18 — down from ~250 MB in v0.2.17 after the build slim-down —
-  plus another ~50 MB cache during use).
-- No other dependencies. The app self-contains Electron, the WASM build of
-  CCP4/Coot, and all monomer libraries.
+  as of v0.2.46 — down from ~250 MB in v0.2.17 after the v0.2.18 build
+  slim-down — plus another ~50 MB cache during use).
+- **No required external dependencies for the core workflow.** The app
+  self-contains Electron, the WASM build of CCP4/Coot, and all monomer
+  libraries.
+- **Optional: CCP4 install.** Some advanced features (`Ligand → Find ligand
+  sites…`, the "Refine with REFMAC5…" button on the covalent-link panel,
+  and the SMILES → CIF fallback via `acedrg`) shell out to system CCP4
+  binaries when present. Without CCP4 they show a "CCP4 not installed"
+  message; everything else works. See [What's in the DMG](#whats-in-the-dmg)
+  below for the full list.
 
 ---
 
@@ -104,27 +111,45 @@ loading…" forever, see [Troubleshooting](#troubleshooting) below.
 
 ## What's in the DMG
 
-Everything Moorhen needs at runtime is inside the `.app` bundle. No external
-installs required:
+The core PyKeko app — load / view / edit / refine / save — is fully
+self-contained: every runtime dependency lives inside the `.app` bundle.
+A handful of advanced features shell out to **system CCP4 binaries** when
+they're present, but PyKeko works fine without CCP4 (those specific menus
+just show a "CCP4 not installed" message; everything else works).
 
 | Component | Bundled? | Size |
 |-----------|----------|------|
 | Electron + Chromium + Node | ✅ | ~330 MB |
-| WASM build of CCP4 / Coot / MMDB / gemmi | ✅ | 41 MB |
+| WASM build of CCP4 / Coot / MMDB / gemmi (the in-app refinement / model-building engine — fully self-contained) | ✅ | 41 MB |
 | Monomer dictionaries | ✅ | 4.3 MB |
 | Tutorial structures (built into File → Tutorials) | ✅ | 6.9 MB |
-| MathJax, pixmaps, fonts, PWA service worker | ✅ | ~30 MB |
-| **CCP4 install** | ❌ not needed |  |
-| **Coot binary install** | ❌ not needed |  |
+| MathJax, pixmaps, fonts | ✅ | ~30 MB |
+| **CCP4 install on disk** | Optional — see below |  |
+| **Coot 0.9.x binary** | ❌ not needed |  |
 | **Node / npm on your machine** | ❌ not needed |  |
 | **Internet, for local file work** | ❌ not needed |  |
 | **Internet, for "Fetch from PDB"** | Required at fetch time | — |
 | **Claude / MCP integration** | Separate install (see below) | — |
 
-Final installed size: ~160 MB on disk (v0.2.18). The DMG itself is **151 MB**
-compressed — down from 226 MB in v0.2.17 after the v0.2.18 build slim-down
-(stopped bundling `viewer-template/node_modules` and other non-runtime paths
-into the .app).
+### What CCP4 unlocks
+
+When CCP4 is installed in any of the standard locations
+(`/Applications/ccp4-9/bin`, `/Applications/ccp4-8.0/bin`, `~/ccp4-9/bin`,
+or just on `PATH`) PyKeko transparently shells out to:
+
+| CCP4 binary | What unlocks | Falls back to (without CCP4) |
+|---|---|---|
+| `acedrg` | SMILES → CIF dictionary fallback when the in-app RDKit-WASM path can't handle a structure (`Ligand → New Ligand from SMILES…`) | RDKit-WASM only; some exotic chemistries fail |
+| `findligand` | `Ligand → Find ligand sites…` / `Find ligand here…` — Fo-Fc blob → ligand-fit | menu items show "CCP4 not installed" |
+| `refmac5` | "Refine with REFMAC5…" button on the covalent-link panel (real-space refinement of declared covalent links against your MTZ) | button shows "CCP4 not installed" |
+
+Read/write of PDB, mmCIF, MTZ, CCP4 maps, ligand `.cif` dictionaries — none
+of these need CCP4. They go through the bundled WASM-Coot + gemmi.
+
+Final installed size: ~160 MB on disk (v0.2.46). The DMG itself is **~144
+MB** compressed — down from 226 MB before v0.2.18 after the build slim-down
+(stopped bundling `viewer-template/node_modules` and other non-runtime
+paths into the .app).
 
 The app is fully offline-capable for any structure file you have locally —
 PDB, mmCIF, MTZ, CCP4 maps, ligand .cif dictionaries, etc. It only reaches the

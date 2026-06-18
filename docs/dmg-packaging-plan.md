@@ -51,7 +51,10 @@ The packaged `.app` must work on a clean Tahoe machine that has:
 - No Moorhen source tree
 - No Node.js / npm
 - No emsdk
-- No CCP4 install
+- No CCP4 install — for the **core** workflow. A handful of advanced
+  features (`acedrg` SMILES fallback, `findligand`, in-app REFMAC5) do
+  shell out to system CCP4 binaries when present, with graceful
+  "CCP4 not installed" fallbacks. See `install-mac.md` for the full list.
 - Just the `.app` (or `.dmg`) downloaded from somewhere
 
 For that to happen, everything the runtime needs has to be **inside** the app
