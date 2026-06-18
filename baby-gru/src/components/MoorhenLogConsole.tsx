@@ -73,12 +73,17 @@ export const MoorhenLogConsole = () => {
     const positionRef = useRef<number>(0);
     const scrollRef = useRef<HTMLDivElement | null>(null);
 
-    // REPL state (v0.2.45). Modes: "js" / "pml". `!` prefix overrides
-    // either mode and routes to the shell channel.
+    // REPL state. Modes: "js" / "pml" / "shell". `!` prefix overrides
+    // any mode and routes to the shell channel (so you can always
+    // shell-out from JS or PyMOL without flipping the dropdown).
     const [replInput, setReplInput] = useState<string>("");
-    const [replMode, setReplMode] = useState<"js" | "pml">(
-        (typeof window !== "undefined" && window.localStorage?.getItem("pykeko.logConsole.replMode") === "pml") ? "pml" : "js"
-    );
+    // Default mode is PyMOL — most users coming over from Coot 0.9 will
+    // type `color red, chain A` long before they reach for `MoorhenControlApi.foo()`.
+    const [replMode, setReplMode] = useState<"js" | "pml" | "shell">(() => {
+        if (typeof window === "undefined") return "pml";
+        const saved = window.localStorage?.getItem("pykeko.logConsole.replMode");
+        return (saved === "js" || saved === "shell" || saved === "pml") ? saved : "pml";
+    });
     useEffect(() => {
         try { window.localStorage?.setItem("pykeko.logConsole.replMode", replMode); } catch {}
     }, [replMode]);
@@ -106,10 +111,14 @@ export const MoorhenLogConsole = () => {
         if (!src.trim()) return;
         const api: any = (typeof window !== "undefined") ? (window as any).MoorhenControlApi : null;
         // `!` prefix always means shell, regardless of current mode.
-        const isShell = src.trimStart().startsWith("!");
+        // Shell *mode* also routes to the shell channel — same code path,
+        // just no leading `!` required.
+        const hasShellPrefix = src.trimStart().startsWith("!");
+        const isShell = hasShellPrefix || replMode === "shell";
         const usePml = !isShell && replMode === "pml";
         const prompt = isShell ? "!" : (usePml ? "p>" : ">");
-        appendLocal("repl-in", `${prompt} ${isShell ? src.trimStart().slice(1).trimStart() : src}`);
+        const displayCmd = hasShellPrefix ? src.trimStart().slice(1).trimStart() : src;
+        appendLocal("repl-in", `${prompt} ${displayCmd}`);
         // Push to history (dedupe consecutive duplicates).
         const h = historyRef.current;
         if (h.length === 0 || h[h.length - 1] !== src) {
@@ -127,7 +136,11 @@ export const MoorhenLogConsole = () => {
         try {
             if (isShell) {
                 if (!api.runShell) { appendLocal("repl-err", "shell unavailable"); return; }
-                const cmd = src.trimStart().slice(1).trimStart();
+                // In Shell mode without a `!` prefix the input IS the command;
+                // when prefixed, strip the marker before passing through.
+                const cmd = hasShellPrefix
+                    ? src.trimStart().slice(1).trimStart()
+                    : src.trim();
 
                 // Special-case shell builtins whose effect on the *running*
                 // shell wouldn't survive a one-shot subshell: cd, export,
@@ -475,9 +488,9 @@ export const MoorhenLogConsole = () => {
                     }}>
                         <select
                             value={replMode}
-                            onChange={(e) => setReplMode(e.target.value as "js" | "pml")}
+                            onChange={(e) => setReplMode(e.target.value as "js" | "pml" | "shell")}
                             disabled={busy}
-                            title="Input mode (! prefix always runs as shell)"
+                            title="Input mode (! prefix always runs as shell, even from JS/PyMOL)"
                             style={{
                                 background: "#1a1d21",
                                 color: "#e9ecef",
@@ -489,17 +502,25 @@ export const MoorhenLogConsole = () => {
                                 cursor: "pointer",
                             }}
                         >
-                            <option value="js">JS</option>
                             <option value="pml">PyMOL</option>
+                            <option value="js">JS</option>
+                            <option value="shell">Shell</option>
                         </select>
-                        <span style={{
-                            color: busy ? "#ffd43b"
-                                : (replInput.trimStart().startsWith("!") ? "#ff8787"
-                                : (replMode === "pml" ? "#b197fc" : "#b197fc")),
-                            fontWeight: 700, userSelect: "none", minWidth: 12,
-                        }}>
-                            {busy ? "…" : (replInput.trimStart().startsWith("!") ? "!" : (replMode === "pml" ? "p>" : ">"))}
-                        </span>
+                        {(() => {
+                            const hasShellPrefix = replInput.trimStart().startsWith("!");
+                            const effectiveShell = hasShellPrefix || replMode === "shell";
+                            const promptText = busy ? "…"
+                                : effectiveShell ? "!"
+                                : (replMode === "pml" ? "p>" : ">");
+                            const promptColor = busy ? "#ffd43b"
+                                : effectiveShell ? "#ff8787"
+                                : "#b197fc";
+                            return (
+                                <span style={{ color: promptColor, fontWeight: 700, userSelect: "none", minWidth: 12 }}>
+                                    {promptText}
+                                </span>
+                            );
+                        })()}
                         <input
                             ref={inputRef}
                             type="text"
@@ -512,8 +533,10 @@ export const MoorhenLogConsole = () => {
                             autoCorrect="off"
                             placeholder={
                                 replMode === "pml"
-                                    ? 'PyMOL — try: color red, //A   (! prefix runs as shell)'
-                                    : 'JS — try: MoorhenControlApi.listMolecules?.()   (! prefix runs as shell)'
+                                    ? 'PyMOL — try: color red, //A   (! prefix → shell)'
+                                : replMode === "shell"
+                                    ? 'Shell — try: ls *.pdb   (cd / pushd / export / clear are intercepted)'
+                                    : 'JS — try: MoorhenControlApi.listMolecules?.()   (! prefix → shell)'
                             }
                             style={{
                                 flex: 1,
