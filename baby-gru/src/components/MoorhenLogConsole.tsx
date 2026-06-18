@@ -382,6 +382,32 @@ export const MoorhenLogConsole = () => {
         }
     }, [expanded]);
 
+    // Push Moorhen's bottom panel (sequence viewer + validation panel)
+    // up by the console's visible height so they don't overlap. The panel
+    // is `position: absolute; bottom: 0`, so a CSS-side override of its
+    // `bottom` value moves it cleanly. Re-applied whenever our height changes.
+    useEffect(() => {
+        if (!available) return;
+        const headerH = 36; // collapsed strip
+        const filterH = expanded ? 38 : 0;
+        const cwdH = expanded && cwd ? 24 : 0;
+        const replH = expanded ? 36 : 0;
+        const resizeH = expanded ? 5 : 0;
+        const totalH = headerH + filterH + cwdH + replH + resizeH + (expanded ? panelHeight : 0);
+        const style = document.getElementById("pykeko-log-console-bottom-offset")
+            || (() => {
+                const s = document.createElement("style");
+                s.id = "pykeko-log-console-bottom-offset";
+                document.head.appendChild(s);
+                return s;
+            })();
+        style.textContent = `.moorhen__bottom-panel-container { bottom: ${totalH}px !important; }`;
+        return () => {
+            const s = document.getElementById("pykeko-log-console-bottom-offset");
+            if (s) s.remove();
+        };
+    }, [available, expanded, cwd, panelHeight]);
+
     if (!available) return null;
 
     const visible = (showAll ? lines : lines.filter(L => !isNoisy(L)))
@@ -403,21 +429,24 @@ export const MoorhenLogConsole = () => {
         <div style={{
             position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 1500,
             fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-            fontSize: "11.5px",
+            fontSize: "12.5px",
             background: "rgba(20, 22, 26, 0.92)", color: "#e9ecef",
             borderTop: "1px solid #495057",
             backdropFilter: "blur(4px)",
             pointerEvents: "auto",
         }}>
-            {/* Status strip — always visible, click to expand. */}
+            {/* Status strip — always visible, click to expand. Height is set
+                generously so the strip fully covers any bottom-pinned host UI
+                (e.g. Moorhen's "No sequences available" placeholder when no
+                structures are loaded) instead of cutting through it mid-line. */}
             <div
                 onClick={() => setExpanded(v => !v)}
                 style={{
                     display: "flex", alignItems: "center", gap: 10,
-                    padding: "3px 10px",
+                    padding: "6px 10px",
                     cursor: "pointer",
                     userSelect: "none",
-                    minHeight: 22,
+                    minHeight: 30,
                     borderBottom: expanded ? "1px solid #495057" : "none",
                 }}
                 title={expanded ? "Click to collapse (⌘`)" : "Click to expand (⌘`)"}
@@ -432,7 +461,7 @@ export const MoorhenLogConsole = () => {
                 }}>
                     {latest ? latest.text : "(log empty)"}
                 </span>
-                <span style={{ color: "#868e96", fontSize: "10px" }}>
+                <span style={{ color: "#868e96", fontSize: "11px" }}>
                     {expanded ? "▼" : "▲"}
                 </span>
             </div>
@@ -468,13 +497,13 @@ export const MoorhenLogConsole = () => {
                             value={filter}
                             onChange={e => setFilter(e.target.value)}
                             style={{
-                                flex: 1, padding: "2px 6px",
+                                flex: 1, padding: "3px 6px",
                                 background: "#1a1d21", color: "#e9ecef",
                                 border: "1px solid #495057", borderRadius: 3,
-                                fontFamily: "inherit", fontSize: "11px",
+                                fontFamily: "inherit", fontSize: "12px",
                             }}
                         />
-                        <label style={{ color: "#adb5bd", display: "flex", alignItems: "center", gap: 4 }}>
+                        <label style={{ color: "#adb5bd", display: "flex", alignItems: "center", gap: 4, fontSize: "12px" }}>
                             <input type="checkbox" checked={showAll} onChange={e => setShowAll(e.target.checked)} />
                             Show all
                         </label>
@@ -483,7 +512,7 @@ export const MoorhenLogConsole = () => {
                             style={{
                                 background: "#343a40", color: "#e9ecef",
                                 border: "1px solid #495057", borderRadius: 3,
-                                padding: "2px 8px", cursor: "pointer", fontSize: "11px",
+                                padding: "3px 8px", cursor: "pointer", fontSize: "12px",
                             }}
                         >
                             Clear view
@@ -496,10 +525,10 @@ export const MoorhenLogConsole = () => {
                         <div
                             title="Active working directory — !cd <path> to change. Files saved/loaded by PyKeko default to this directory."
                             style={{
-                                padding: "2px 10px",
+                                padding: "3px 10px",
                                 background: "rgba(0,0,0,0.15)",
                                 color: "#74c0fc",
-                                fontSize: "11px",
+                                fontSize: "12px",
                                 whiteSpace: "nowrap",
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
@@ -547,9 +576,9 @@ export const MoorhenLogConsole = () => {
                                 color: "#e9ecef",
                                 border: "1px solid #495057",
                                 borderRadius: 3,
-                                padding: "1px 4px",
+                                padding: "2px 4px",
                                 fontFamily: "inherit",
-                                fontSize: "11px",
+                                fontSize: "12px",
                                 cursor: "pointer",
                             }}
                         >
