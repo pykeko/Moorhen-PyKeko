@@ -89,6 +89,41 @@ export const MoorhenLogConsole = () => {
     }, [replMode]);
     const [busy, setBusy] = useState<boolean>(false);
     const [cwd, setCwd] = useState<string>("");
+
+    // Drag-resizable scroll-area height. User drags the top edge of the
+    // expanded panel up/down. Persisted across launches.
+    const HEIGHT_KEY = "pykeko.logConsole.panelHeight";
+    const MIN_PANEL_H = 80;
+    const [panelHeight, setPanelHeight] = useState<number>(() => {
+        if (typeof window === "undefined") return 240;
+        const v = parseInt(window.localStorage?.getItem(HEIGHT_KEY) || "", 10);
+        return Number.isFinite(v) && v >= MIN_PANEL_H ? v : 240;
+    });
+    useEffect(() => {
+        try { window.localStorage?.setItem(HEIGHT_KEY, String(panelHeight)); } catch {}
+    }, [panelHeight]);
+    const maxPanelH = () => (typeof window !== "undefined" ? Math.floor(window.innerHeight * 0.75) : 600);
+    const startResize = useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
+        const startY = e.clientY;
+        const startH = panelHeight;
+        const onMove = (ev: MouseEvent) => {
+            // Anchored at the bottom -- dragging up grows the panel.
+            const delta = startY - ev.clientY;
+            const next = Math.max(MIN_PANEL_H, Math.min(maxPanelH(), startH + delta));
+            setPanelHeight(next);
+        };
+        const onUp = () => {
+            window.removeEventListener("mousemove", onMove);
+            window.removeEventListener("mouseup", onUp);
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+        };
+        document.body.style.cursor = "ns-resize";
+        document.body.style.userSelect = "none";
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+    }, [panelHeight]);
     const historyRef = useRef<string[]>(loadHistory());
     const historyIdxRef = useRef<number>(historyRef.current.length); // points past end
     const draftRef = useRef<string>("");
@@ -405,6 +440,22 @@ export const MoorhenLogConsole = () => {
             {/* Expanded body */}
             {expanded && (
                 <div>
+                    {/* Resize handle at the very top edge — drag to grow/shrink
+                        the scroll area. Tiny grey strip with `ns-resize` cursor
+                        and `≡` affordance on hover so it's discoverable. */}
+                    <div
+                        onMouseDown={startResize}
+                        title="Drag to resize"
+                        style={{
+                            height: 5,
+                            cursor: "ns-resize",
+                            background: "linear-gradient(to bottom, transparent 0%, #495057 50%, transparent 100%)",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            userSelect: "none",
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "#74c0fc")}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "linear-gradient(to bottom, transparent 0%, #495057 50%, transparent 100%)")}
+                    />
                     <div style={{
                         display: "flex", alignItems: "center", gap: 8,
                         padding: "5px 10px",
@@ -461,7 +512,7 @@ export const MoorhenLogConsole = () => {
                     <div
                         ref={scrollRef}
                         style={{
-                            maxHeight: 240, overflowY: "auto",
+                            height: panelHeight, overflowY: "auto",
                             padding: "4px 10px",
                             lineHeight: 1.35,
                         }}
