@@ -29,11 +29,11 @@ $99/year for a Developer ID certificate.
   self-contains Electron, the WASM build of CCP4/Coot, and all monomer
   libraries.
 - **Optional: CCP4 install.** Some advanced features (`Ligand → Find ligand
-  sites…`, the "Refine with REFMAC5…" button on the covalent-link panel,
-  and the SMILES → CIF fallback via `acedrg`) shell out to system CCP4
-  binaries when present. Without CCP4 they show a "CCP4 not installed"
-  message; everything else works. See [What's in the DMG](#whats-in-the-dmg)
-  below for the full list.
+  sites…`, `Ligand → Refine with DIMPLE…`, the "Refine with REFMAC5…"
+  button on the covalent-link panel, and the SMILES → CIF fallback via
+  `acedrg`) shell out to system CCP4 binaries when present. Without CCP4
+  they show a "CCP4 not installed" message; everything else works. See
+  [What's in the DMG](#whats-in-the-dmg) below for the full list.
 
 ---
 
@@ -142,6 +142,7 @@ or just on `PATH`) PyKeko transparently shells out to:
 | `acedrg` | SMILES → CIF dictionary fallback when the in-app RDKit-WASM path can't handle a structure (`Ligand → New Ligand from SMILES…`) | RDKit-WASM only; some exotic chemistries fail |
 | `findligand` | `Ligand → Find ligand sites…` / `Find ligand here…` — Fo-Fc blob → ligand-fit | menu items show "CCP4 not installed" |
 | `refmac5` | "Refine with REFMAC5…" button on the covalent-link panel (real-space refinement of declared covalent links against your MTZ) | button shows "CCP4 not installed" |
+| `dimple` | `Ligand → Refine with DIMPLE…` — the auto-pipeline: rigid-body / MR + restrained refinement + optional ligand fitting end-to-end. The "I have a co-crystal MTZ → refined complex" macro | menu item shows "CCP4 not installed" |
 
 Read/write of PDB, mmCIF, MTZ, CCP4 maps, ligand `.cif` dictionaries — none
 of these need CCP4. They go through the bundled WASM-Coot + gemmi.
