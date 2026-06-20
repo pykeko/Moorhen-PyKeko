@@ -13,6 +13,7 @@ import { MoorhenScriptApi } from "../utils/MoorhenScriptAPI";
 import { MoorhenTimeCapsule } from "../utils/MoorhenTimeCapsule";
 import { moorhensession } from "../protobuf/MoorhenSession";
 import { executeCovalentLink } from "../utils/MoorhenCovalentLinkExecutor";
+import { evaluateSelectionOnMolecules } from "../utils/MoorhenSelectionAlgebra";
 import { addMolecule, showMolecule } from "../store/moleculesSlice";
 import { addMap } from "../store/mapsSlice";
 import { setActiveMap } from "../store/generalStatesSlice";
@@ -564,6 +565,28 @@ export function createControlApi(ctx: Ctx) {
       const ctrl: any = (typeof window !== "undefined") ? (window as any).__moorhenControl : null;
       if (!ctrl?.cwdStack) return { ok: false, error: "cwdStack IPC bridge unavailable (PyKeko desktop only)" };
       return await ctrl.cwdStack(action, p);
+    },
+
+    // PyKeko v0.3 — evaluate a selection-algebra expression.
+    //
+    // Returns { count, cids } where cids is a short-form CID list grouped
+    // by chain/residue-range. See MoorhenSelectionAlgebra.ts for the
+    // grammar. Examples:
+    //   "byres polymer within 5 of organic"  -> pocket residues around ligand
+    //   "chain A and resi 100-200"           -> CIDs for that range
+    //   "(b > 50) and polymer"               -> high-B protein atoms
+    //   "not water"                          -> everything except water
+    //
+    // savedSelections: optional name->expression map for saved selections
+    // referenced inside the expression by bare identifier.
+    async evaluateSelection(expr: string, savedSelections?: Record<string, string>) {
+      try {
+        const mols = getMolecules();
+        const r = evaluateSelectionOnMolecules(expr, mols, savedSelections);
+        return { ok: true, count: r.count, cids: r.cids };
+      } catch (e: any) {
+        return { ok: false, error: String(e?.message || e) };
+      }
     },
 
     // PyKeko v0.2.45 — JS REPL evaluator.
