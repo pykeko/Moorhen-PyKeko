@@ -29,6 +29,7 @@ export { ImportDictionary, SMILESToLigand } from "./ImportLigandDictionary";
 export { MakeCovalentMenuItem } from "./MakeCovalentMenuItem";
 export { FitLigandHere } from "./FitLigandHere";
 export { RefineDimple } from "./RefineDimple";
+export { UndoMenuItem, RedoMenuItem } from "./UndoRedoMenuItem";
 export { ImportMap } from "./ImportMap";
 export { ImportMapCoefficients } from "./ImportMapCoefficients";
 export { LayoutSettings } from "./LayoutSettings";

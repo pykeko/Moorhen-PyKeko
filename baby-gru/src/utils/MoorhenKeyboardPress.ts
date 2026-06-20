@@ -169,8 +169,28 @@ export const moorhenKeyPress = (
 
     let action: null | string = null;
 
+    // PyKeko v0.3: on macOS, treat metaKey (Cmd) and ctrlKey (Ctrl) as
+    // interchangeable when matching shortcuts. Moorhen's upstream defaults
+    // declare e.g. undo as ["ctrlKey"], which on macOS means Ctrl+Z, NOT
+    // Cmd+Z -- the user's muscle memory. The matcher pair below normalises
+    // both directions: a shortcut declared with ctrlKey fires on Cmd held,
+    // and vice versa, but only on Mac.
+    const isMac = typeof navigator !== "undefined" && /Mac|iP(hone|od|ad)/.test(navigator.platform || navigator.userAgent || "");
+    const macEquiv = (mod: string) => isMac && (mod === "ctrlKey" || mod === "metaKey")
+        ? (event.ctrlKey || event.metaKey)
+        : !!event[mod];
+
     for (const key of Object.keys(shortCuts)) {
-        if (event.key && shortCuts[key].keyPress === event.key.toLowerCase() && shortCuts[key].modifiers.every(modifier => event[modifier]) && eventModifiersCodes.every(modifier => shortCuts[key].modifiers.includes(modifier))) {
+        if (event.key && shortCuts[key].keyPress === event.key.toLowerCase() && shortCuts[key].modifiers.every(modifier => macEquiv(modifier)) && eventModifiersCodes.every(modifier => {
+            if (shortCuts[key].modifiers.includes(modifier)) return true;
+            // On macOS, a held metaKey satisfies a ctrlKey requirement (and
+            // vice versa) -- don't reject the match just because the user
+            // pressed Cmd where the shortcut declared Ctrl.
+            if (isMac && (modifier === "ctrlKey" || modifier === "metaKey")) {
+                return shortCuts[key].modifiers.includes("ctrlKey") || shortCuts[key].modifiers.includes("metaKey");
+            }
+            return false;
+        })) {
             action = key
             break
         }

@@ -340,6 +340,23 @@ export const subMenuMap: SubMenuMap = {
         label: "Edit",
         items: [
             {
+                id: "undo",
+                label: "Undo",
+                type: "customJSX",
+                keywords: ["undo", "back", "revert"],
+                description: "Undo last action (Ctrl/⌘+Z)",
+                jsx: MenuItems.UndoMenuItem,
+            },
+            {
+                id: "redo",
+                label: "Redo",
+                type: "customJSX",
+                keywords: ["redo", "forward"],
+                description: "Redo previously undone action (Ctrl/⌘+Shift+Z)",
+                jsx: MenuItems.RedoMenuItem,
+            },
+            { type: "separator" },
+            {
                 id: "add-simple",
                 label: "Add simple...",
                 type: "popover",
