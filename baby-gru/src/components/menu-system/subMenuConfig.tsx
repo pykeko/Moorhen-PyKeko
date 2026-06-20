@@ -679,6 +679,14 @@ export const subMenuMap: SubMenuMap = {
                 content: MenuItems.FitLigandHere,
             },
             {
+                id: "refine-dimple",
+                label: "Refine with DIMPLE...",
+                type: "popover",
+                keywords: ["dimple", "refine", "refinement", "auto", "pipeline", "ccp4", "ligand", "co-crystal"],
+                description: "Auto-pipeline: rigid-body / MR + restrained refinement + optional ligand fit (CCP4 dimple)",
+                content: MenuItems.RefineDimple,
+            },
+            {
                 id: "centre-on-ligand",
                 label: "Centre on ligand...",
                 type: "popover",

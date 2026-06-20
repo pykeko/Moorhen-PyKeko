@@ -496,6 +496,38 @@ export function createControlApi(ctx: Ctx) {
       return await ctrl.runFindLigand(opts);
     },
 
+    /**
+     * PyKeko v0.2.47 — Spawn CCP4's `dimple` auto-pipeline:
+     * molecular-replacement-or-rigid-body + restrained refinement +
+     * optional ligand fitting end-to-end. Saves the model to disk first
+     * via the saveAugmentedCif IPC handler if `modelPath` isn't given.
+     *
+     * Returns { ok, finalPdb, finalPdbText, finalMtz, outDir, logPath, log }
+     * | { ok: false, notInstalled?, error }.
+     *
+     * Typical use: ask the user for an MTZ (via pickMtzFile()), optionally
+     * for a ligand CIF, optionally for a SMILES; serialize the active
+     * molecule to PDB via molecule_to_PDB_string + saveTextFile to disk;
+     * call this. Refined PDB lands in outDir/final.pdb; load it back via
+     * loadCoordsFromString.
+     */
+    async runDimple(opts: {
+      modelPath: string;
+      mtzPath: string;
+      ligandCifPath?: string | null;
+      smiles?: string | null;
+      outDir?: string | null;
+      restrCycles?: number;
+      mrThreshold?: number;
+      freeRFlagsMtz?: string | null;
+    }) {
+      const ctrl: any = (typeof window !== "undefined") ? (window as any).__moorhenControl : null;
+      if (!ctrl?.runDimple) {
+        return { ok: false, error: "runDimple IPC bridge unavailable (PyKeko desktop only)" };
+      }
+      return await ctrl.runDimple(opts);
+    },
+
     // PyKeko v0.2.45 — shell escape, mirrors the in-app console's `!`
     // prefix. Runs the command via the user's login shell in the active
     // effective cwd (see setCwd). Desktop-only. Returns

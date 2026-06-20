@@ -98,6 +98,8 @@ export const MoorhenWebMG = forwardRef<webGL.MGWebGL, MoorhenWebMGPropsInterface
     const atomLabelDepthMode = useSelector((state: moorhen.State) => state.labelSettings.atomLabelDepthMode)
     const mouseSensitivity = useSelector((state: moorhen.State) => state.mouseSettings.mouseSensitivity)
     const zoomWheelSensitivityFactor = useSelector((state: moorhen.State) => state.mouseSettings.zoomWheelSensitivityFactor)
+    // PyKeko v0.2.47 — rotation paradigm (gimbal vs trackball)
+    const rotationStyle = useSelector((state: moorhen.State) => (state.mouseSettings as any).rotationStyle) || "trackball"
     const shortCuts = useSelector((state: moorhen.State) => state.shortcutSettings.shortCuts)
     const shortcutOnHoveredAtom = useSelector((state: moorhen.State) => state.shortcutSettings.shortcutOnHoveredAtom)
     const showShortcutToast = useSelector((state: moorhen.State) => state.shortcutSettings.showShortcutToast)
@@ -733,6 +735,7 @@ export const MoorhenWebMG = forwardRef<webGL.MGWebGL, MoorhenWebMGPropsInterface
                     cursorPositionChanged={cursorPositionChanged}
                     messageChanged={(d) => { }}
                     mouseSensitivityFactor={mouseSensitivity}
+                    rotationStyle={rotationStyle}
                     zoomWheelSensitivityFactor={zoomWheelSensitivityFactor}
                     keyboardAccelerators={JSON.parse(shortCuts as string)}
                     showCrosshairs={drawCrosshairs}

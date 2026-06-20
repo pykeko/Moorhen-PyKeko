@@ -7047,9 +7047,93 @@ export class MGWebGL extends React.Component implements webGL.MGWebGL {
                 }
             }
 
-            const xQ = createQuatFromAngle(-self.dy,rot_x_axis);
-            const yQ = createQuatFromAngle(-self.dx,rot_y_axis);
-            quat4.multiply(xQ, xQ, yQ);
+            // PyKeko v0.2.47 — choose between Moorhen's gimbal rotation and
+            // a PyMOL-style trackball. Default is trackball (set in the
+            // mouseSettings slice). The gimbal branch is the historical
+            // Moorhen behaviour; the trackball branch is a near-line-for-line
+            // port of PyMOL's `cButModeRotXYZ` handler from
+            // pymol-open-source/layer1/SceneMouse.cpp (~line 1755). Same
+            // parameters and same axis-damping; default `mouse_scale = 1.3`,
+            // `mouse_limit = 100` per pymol-open-source/layer1/SettingInfo.h.
+            let xQ;
+            if ((this.props as any).rotationStyle === "gimbal") {
+                xQ = createQuatFromAngle(-self.dy, rot_x_axis);
+                const yQ = createQuatFromAngle(-self.dx, rot_y_axis);
+                quat4.multiply(xQ, xQ, yQ);
+            } else {
+                // PyMOL-exact trackball params.
+                const PYMOL_MOUSE_SCALE = 1.3;
+                const PYMOL_MOUSE_LIMIT = 100.0;
+                const PYMOL_TRACKBALL_RADIUS_FRAC = 0.45;
+
+                const c = this.canvasRef.current;
+                const offset = getOffsetRect(c);
+                const W = this.gl.viewportWidth;
+                const H = this.gl.viewportHeight;
+                const scale = PYMOL_TRACKBALL_RADIUS_FRAC * Math.min(W, H);
+
+                // Cursor positions in device pixels relative to canvas.
+                // Previous-frame positions recovered by un-doing the
+                // sensitivity multiplication that ran at top of doMouseMove.
+                const sens = self.props.mouseSensitivityFactor;
+                const toCanvas = (px: number, py: number): [number, number] => {
+                    const ds = getDeviceScale();
+                    return [ds * (px - offset.left), ds * (py - offset.top)];
+                };
+                const [xCur, yCur] = toCanvas(event.pageX, event.pageY);
+                const [xPrev, yPrev] = toCanvas(event.pageX - self.dx / sens, event.pageY - self.dy / sens);
+
+                // PyMOL's vector convention: v = (W/2 - x, H/2 - y, z).
+                const v1: [number, number, number] = [W / 2 - xCur, H / 2 - yCur, 0];
+                const v2: [number, number, number] = [W / 2 - xPrev, H / 2 - yPrev, 0];
+                const r1 = Math.hypot(v1[0], v1[1]);
+                const r2 = Math.hypot(v2[0], v2[1]);
+                // Inside the trackball: lift onto the sphere; outside: flat
+                // (z = 0). This is PyMOL's exact rule, NOT Holroyd's
+                // hyperbolic-sheet — the flat-outside behaviour is why
+                // edge drags in PyMOL feel like roll, not yaw.
+                if (r1 < scale) v1[2] = Math.sqrt(scale * scale - r1 * r1);
+                if (r2 < scale) v2[2] = Math.sqrt(scale * scale - r2 * r2);
+
+                const n1 = vec3.fromValues(v1[0], v1[1], v1[2]); vec3.normalize(n1, n1);
+                const n2 = vec3.fromValues(v2[0], v2[1], v2[2]); vec3.normalize(n2, n2);
+                const cp = vec3.create();
+                vec3.cross(cp, n1, n2);
+                const cpLen = vec3.length(cp);
+
+                if (cpLen < 1e-6) {
+                    xQ = quat4.create();
+                    quat4.set(xQ, 0, 0, 0, 1);
+                } else {
+                    // Pure-Shoemake angle: 2 * asin(|n1 × n2|), in degrees,
+                    // multiplied by PyMOL's mouse_scale.
+                    let theta = PYMOL_MOUSE_SCALE * 2 * 180 *
+                        Math.asin(Math.min(1, cpLen)) / Math.PI;
+                    // Speed limiter: caps angle to mouse_limit * pixel-travel
+                    // / trackball-radius. Prevents huge jumps from large
+                    // motion events.
+                    const dxPx = v1[0] - v2[0];
+                    const dyPx = v1[1] - v2[1];
+                    const dt = PYMOL_MOUSE_LIMIT * Math.hypot(dxPx, dyPx) / scale;
+                    if (theta > dt) theta = dt;
+
+                    const axis: [number, number, number] = [cp[0] / cpLen, cp[1] / cpLen, cp[2] / cpLen];
+                    // Z-axis rotation damping: divide angle by 1 + |axis.z|.
+                    // This makes pure-z rotations (which happen near the
+                    // rim) feel less abrupt without preventing them entirely.
+                    theta = theta / (1.0 + Math.abs(axis[2]));
+                    // PyMOL flips the z component of the axis before applying.
+                    axis[2] = -axis[2];
+
+                    // User-facing mouse-sensitivity slider: scales the
+                    // resulting angle so the slider still tunes rotation
+                    // speed. Default Moorhen sensitivity is 0.3 → identity
+                    // factor; higher values speed up rotation proportionally.
+                    theta *= sens / 0.3;
+
+                    xQ = createQuatFromAngle(theta, axis as any);
+                }
+            }
 
             if (this.currentlyDraggedAtom) {
 

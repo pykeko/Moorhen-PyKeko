@@ -344,6 +344,7 @@ export namespace webGL {
         messageChanged: (d: Dictionary<string>) => void;
         mouseSensitivityFactor: number | null;
         zoomWheelSensitivityFactor: number | null;
+        rotationStyle?: "gimbal" | "trackball";
         keyboardAccelerators: Dictionary<string>;
         showCrosshairs: boolean | null;
         showScaleBar: boolean | null;
