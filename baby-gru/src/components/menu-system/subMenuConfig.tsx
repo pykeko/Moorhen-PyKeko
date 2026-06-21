@@ -624,6 +624,14 @@ export const subMenuMap: SubMenuMap = {
                 description: "Detect + draw H-bonds, salt bridges, disulfides, clashes as pseudobonds",
                 content: MenuItems.InteractionsMenuItem,
             },
+            {
+                id: "symmetry",
+                label: "Symmetry...",
+                type: "popover",
+                keywords: ["symmetry", "sym", "mate", "crystal", "cell", "unit", "packing", "spacegroup"],
+                description: "Unit cell box + symmetry mate Cα traces within a radius of the rotation centre",
+                content: MenuItems.SymmetryMenuItem,
+            },
             { type: "separator" },
             {
                 id: "scene-preset",

@@ -17,6 +17,7 @@ import { evaluateSelectionOnMolecules, flattenMolecule } from "../utils/MoorhenS
 import { setSavedSelection, removeSavedSelection } from "../store/savedSelectionsSlice";
 import { bondsToVectors, detectAll, InteractionType, OVERLAY_ID_PREFIX } from "../utils/MoorhenInteractions";
 import { addVectors, removeVectorsMatchingIDString } from "../store/vectorsSlice";
+import { generateSymMatesNear, getCell, getSpacegroupName, PREFIX_CELL_ALL, PREFIX_SYM_ALL, symMateTraceVectors, unitCellBoxVectors } from "../utils/MoorhenSymmetry";
 import { addMolecule, showMolecule } from "../store/moleculesSlice";
 import { addMap } from "../store/mapsSlice";
 import { setActiveMap } from "../store/generalStatesSlice";
@@ -643,6 +644,73 @@ export function createControlApi(ctx: Ctx) {
       for (const t of list) dispatch(removeVectorsMatchingIDString(OVERLAY_ID_PREFIX[t]));
       repaint();
       return { ok: true };
+    },
+
+    // PyKeko v0.3 — symmetry overlays: unit cell box + sym mate CA traces.
+    //
+    // showCell()        -> draw the unit-cell box for the active molecule
+    // hideCell()        -> remove it
+    // showSymmetry({radius=15, molNo?}) -> draw sym mate CA traces of every
+    //                       spacegroup operator (within an envelope of
+    //                       neighbouring unit cells) that brings any CA within
+    //                       `radius` A of the current rotation centre. Cycles
+    //                       through a colour palette per operator.
+    // hideSymmetry()    -> remove all sym mate traces
+    // getCellInfo()     -> { spacegroup, cell: {a,b,c,alpha,beta,gamma} }
+    async showCell(molNo?: number) {
+      const mol = molByNo(molNo);
+      if (!mol) return { ok: false, error: "No molecule loaded." };
+      const vectors = unitCellBoxVectors(mol);
+      if (vectors.length === 0) return { ok: false, error: "Molecule has no unit cell." };
+      dispatch(removeVectorsMatchingIDString(PREFIX_CELL_ALL));
+      dispatch(addVectors(vectors));
+      repaint();
+      return { ok: true, edges: vectors.length };
+    },
+    async hideCell() {
+      dispatch(removeVectorsMatchingIDString(PREFIX_CELL_ALL));
+      repaint();
+      return { ok: true };
+    },
+    async showSymmetry(opts?: { radius?: number; molNo?: number }) {
+      const radius = opts?.radius ?? 15;
+      const mol = molByNo(opts?.molNo);
+      if (!mol) return { ok: false, error: "No molecule loaded." };
+      const sg = getSpacegroupName(mol);
+      const cell = getCell(mol);
+      if (!sg || !cell) {
+        return { ok: false, error: "Molecule has no spacegroup or unit cell." };
+      }
+      const origin = store.getState().glRef.origin;
+      const centre: [number, number, number] = [-origin[0], -origin[1], -origin[2]];
+      const mates = generateSymMatesNear(mol, centre, radius);
+      dispatch(removeVectorsMatchingIDString(PREFIX_SYM_ALL));
+      let totalEdges = 0;
+      for (let i = 0; i < mates.length; i++) {
+        const traceVectors = symMateTraceVectors(mates[i], `m${i}`);
+        if (traceVectors.length > 0) {
+          dispatch(addVectors(traceVectors));
+          totalEdges += traceVectors.length;
+        }
+      }
+      repaint();
+      return {
+        ok: true,
+        spacegroup: sg,
+        matesShown: mates.length,
+        traceSegments: totalEdges,
+        mates: mates.map(m => ({ opIdx: m.opIdx, opLabel: m.opLabel, cellOffset: m.cellOffset, atomCount: m.atoms.length })),
+      };
+    },
+    async hideSymmetry() {
+      dispatch(removeVectorsMatchingIDString(PREFIX_SYM_ALL));
+      repaint();
+      return { ok: true };
+    },
+    async getCellInfo(molNo?: number) {
+      const mol = molByNo(molNo);
+      if (!mol) return { ok: false, error: "No molecule loaded." };
+      return { ok: true, spacegroup: getSpacegroupName(mol), cell: getCell(mol) };
     },
 
     // PyKeko v0.3 — saved-selection management.
