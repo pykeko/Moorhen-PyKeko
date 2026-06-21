@@ -30,6 +30,7 @@ export { MakeCovalentMenuItem } from "./MakeCovalentMenuItem";
 export { FitLigandHere } from "./FitLigandHere";
 export { RefineDimple } from "./RefineDimple";
 export { UndoMenuItem, RedoMenuItem } from "./UndoRedoMenuItem";
+export { SelectionsMenuItem } from "./SelectionsMenuItem";
 export { ImportMap } from "./ImportMap";
 export { ImportMapCoefficients } from "./ImportMapCoefficients";
 export { LayoutSettings } from "./LayoutSettings";

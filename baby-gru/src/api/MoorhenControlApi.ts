@@ -14,6 +14,7 @@ import { MoorhenTimeCapsule } from "../utils/MoorhenTimeCapsule";
 import { moorhensession } from "../protobuf/MoorhenSession";
 import { executeCovalentLink } from "../utils/MoorhenCovalentLinkExecutor";
 import { evaluateSelectionOnMolecules } from "../utils/MoorhenSelectionAlgebra";
+import { setSavedSelection, removeSavedSelection } from "../store/savedSelectionsSlice";
 import { addMolecule, showMolecule } from "../store/moleculesSlice";
 import { addMap } from "../store/mapsSlice";
 import { setActiveMap } from "../store/generalStatesSlice";
@@ -577,16 +578,46 @@ export function createControlApi(ctx: Ctx) {
     //   "(b > 50) and polymer"               -> high-B protein atoms
     //   "not water"                          -> everything except water
     //
-    // savedSelections: optional name->expression map for saved selections
-    // referenced inside the expression by bare identifier.
+    // Saved-selection names (bare identifiers in the expression) are
+    // auto-resolved against the store's savedSelections map. Pass an
+    // explicit `savedSelections` arg to override, or to evaluate against
+    // a hypothetical map for previewing.
     async evaluateSelection(expr: string, savedSelections?: Record<string, string>) {
       try {
         const mols = getMolecules();
-        const r = evaluateSelectionOnMolecules(expr, mols, savedSelections);
+        const saved = savedSelections ?? Object.fromEntries(
+          Object.entries(store.getState().savedSelections?.byName || {}).map(([n, s]: [string, any]) => [n, s.expression])
+        );
+        const r = evaluateSelectionOnMolecules(expr, mols, saved);
         return { ok: true, count: r.count, cids: r.cids };
       } catch (e: any) {
         return { ok: false, error: String(e?.message || e) };
       }
+    },
+
+    // PyKeko v0.3 — saved-selection management.
+    // setSelection persists by name (overwriting any existing entry).
+    // deleteSelection removes by name. listSelections returns the current map.
+    async setSelection(name: string, expression: string, note?: string) {
+      if (!name || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+        return { ok: false, error: "Name must be a bare identifier (letters/digits/underscore, starting with a letter or _)." };
+      }
+      // Validate the expression by parsing it before persisting.
+      try {
+        const mols = getMolecules();
+        evaluateSelectionOnMolecules(expression, mols, {}); // throws if grammar is wrong
+      } catch (e: any) {
+        return { ok: false, error: "Expression failed to parse: " + String(e?.message || e) };
+      }
+      dispatch(setSavedSelection({ name, expression, note }));
+      return { ok: true, name, expression };
+    },
+    async deleteSelection(name: string) {
+      dispatch(removeSavedSelection(name));
+      return { ok: true, name };
+    },
+    async listSelections() {
+      return { ok: true, selections: store.getState().savedSelections?.byName || {} };
     },
 
     // PyKeko v0.2.45 — JS REPL evaluator.

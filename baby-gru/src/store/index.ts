@@ -99,6 +99,8 @@ export {
     resetMapContourSettings,
 }  from "./mapContourSettingsSlice";
 export { setContourWheelSensitivityFactor, setZoomWheelSensitivityFactor, setMouseSensitivity, setRotationStyle, resetDefaultMouseSettings }  from "./mouseSettings";
+export { setSavedSelection, removeSavedSelection, clearSavedSelections, replaceSavedSelections } from "./savedSelectionsSlice";
+export type { SavedSelection } from "./savedSelectionsSlice";
 export { setShowShortcutToast, setShortcutOnHoveredAtom, setShortCuts, resetShortcutSettings }  from "./shortCutsSlice";
 export { setMenuSetting, resetMenuSetting, resetMenu }  from "./menusSlice";
 export { setEnableTimeCapsule, setMakeBackups, setMaxBackupCount, setModificationCountBackupThreshold, resetBackupSettings }  from "./backupSettingsSlice";

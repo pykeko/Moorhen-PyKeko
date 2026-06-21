@@ -357,6 +357,15 @@ export const subMenuMap: SubMenuMap = {
             },
             { type: "separator" },
             {
+                id: "selections",
+                label: "Selections...",
+                type: "popover",
+                keywords: ["select", "selection", "expression", "byres", "within", "pymol", "saved", "pocket"],
+                description: "PyMOL-style selection algebra: ad-hoc expressions + saved named selections",
+                content: MenuItems.SelectionsMenuItem,
+            },
+            { type: "separator" },
+            {
                 id: "add-simple",
                 label: "Add simple...",
                 type: "popover",
