@@ -1516,6 +1516,32 @@ export const executePymolScript = async (
 ): Promise<void> => {
     const cmds = parsePymolScript(src);
     const registry = new PymolRegistry();
+
+    // PyKeko v0.3: seed the translator registry with our saved selections
+    // from the savedSelectionsSlice so that any PyMOL command can use a
+    // saved name verbatim. e.g. with `pocket` saved as
+    // `byres polymer within 5 of organic`, the command
+    //   color red, pocket
+    // resolves the same way `select pocket, ...; color red, pocket` would.
+    // Expressions that fail the translator's parser are skipped with a
+    // warning -- the saved-selections grammar is mostly a subset of PyMOL
+    // selection algebra so this is rarely hit in practice.
+    try {
+        const saved = env?.store?.getState?.()?.savedSelections?.byName as Record<string, { name: string; expression: string }> | undefined;
+        if (saved) {
+            for (const [name, sel] of Object.entries(saved)) {
+                try {
+                    const ast = parseSelection(sel.expression);
+                    registry.register(name, { kind: "named", ast });
+                } catch (e: any) {
+                    console.warn(`[pymol] saved selection "${name}" not parsable by PyMOL translator: ${e?.message ?? e}`);
+                }
+            }
+        }
+    } catch (e: any) {
+        console.warn(`[pymol] failed to load saved selections: ${e?.message ?? e}`);
+    }
+
     for (const cmd of cmds) {
         const handler = handlers[cmd.cmd];
         if (!handler) {
