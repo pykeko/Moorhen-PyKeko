@@ -617,6 +617,15 @@ export const subMenuMap: SubMenuMap = {
         label: "View",
         items: [
             {
+                id: "interactions",
+                label: "Interactions...",
+                type: "popover",
+                keywords: ["interactions", "hbond", "hydrogen", "bond", "salt", "bridge", "disulfide", "clash", "contact", "pseudobond"],
+                description: "Detect + draw H-bonds, salt bridges, disulfides, clashes as pseudobonds",
+                content: MenuItems.InteractionsMenuItem,
+            },
+            { type: "separator" },
+            {
                 id: "scene-preset",
                 label: "Scene preset...",
                 type: "popover",

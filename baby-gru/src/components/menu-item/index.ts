@@ -31,6 +31,7 @@ export { FitLigandHere } from "./FitLigandHere";
 export { RefineDimple } from "./RefineDimple";
 export { UndoMenuItem, RedoMenuItem } from "./UndoRedoMenuItem";
 export { SelectionsMenuItem } from "./SelectionsMenuItem";
+export { InteractionsMenuItem } from "./InteractionsMenuItem";
 export { ImportMap } from "./ImportMap";
 export { ImportMapCoefficients } from "./ImportMapCoefficients";
 export { LayoutSettings } from "./LayoutSettings";

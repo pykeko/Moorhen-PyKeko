@@ -13,8 +13,10 @@ import { MoorhenScriptApi } from "../utils/MoorhenScriptAPI";
 import { MoorhenTimeCapsule } from "../utils/MoorhenTimeCapsule";
 import { moorhensession } from "../protobuf/MoorhenSession";
 import { executeCovalentLink } from "../utils/MoorhenCovalentLinkExecutor";
-import { evaluateSelectionOnMolecules } from "../utils/MoorhenSelectionAlgebra";
+import { evaluateSelectionOnMolecules, flattenMolecule } from "../utils/MoorhenSelectionAlgebra";
 import { setSavedSelection, removeSavedSelection } from "../store/savedSelectionsSlice";
+import { bondsToVectors, detectAll, InteractionType, OVERLAY_ID_PREFIX } from "../utils/MoorhenInteractions";
+import { addVectors, removeVectorsMatchingIDString } from "../store/vectorsSlice";
 import { addMolecule, showMolecule } from "../store/moleculesSlice";
 import { addMap } from "../store/mapsSlice";
 import { setActiveMap } from "../store/generalStatesSlice";
@@ -593,6 +595,54 @@ export function createControlApi(ctx: Ctx) {
       } catch (e: any) {
         return { ok: false, error: String(e?.message || e) };
       }
+    },
+
+    // PyKeko v0.3 — interaction overlays (H-bonds / salt bridges / disulfides /
+    // clashes). Detects per-type and renders as pseudobonds via the existing
+    // vectorsSlice; each type uses a unique id-prefix so the four overlays can
+    // be toggled independently. Defaults to all four types if none specified.
+    // selection (optional) is a selection-algebra expression restricting which
+    // atoms participate in detection (e.g. "byres polymer within 6 of organic"
+    // to scope to the binding pocket).
+    async showInteractions(opts?: {
+      types?: InteractionType[];
+      selection?: string;
+    }) {
+      try {
+        const mols = getMolecules();
+        const types = opts?.types ?? ["hbond", "salt", "disulfide", "clash"];
+        // Collect atoms -- filter by selection if requested.
+        let atoms: any[] = [];
+        for (const m of mols) atoms.push(...flattenMolecule(m));
+        if (opts?.selection) {
+          const savedMap = Object.fromEntries(
+            Object.entries(store.getState().savedSelections?.byName || {}).map(([n, s]: [string, any]) => [n, s.expression])
+          );
+          const evald = evaluateSelectionOnMolecules(opts.selection, mols, savedMap);
+          const keep = evald.ids;
+          atoms = atoms.filter((_, i) => keep.has(i));
+        }
+        const detected = detectAll(atoms, types);
+        const counts: Record<string, number> = {};
+        for (const t of types) {
+          const bonds = detected[t];
+          counts[t] = bonds.length;
+          dispatch(removeVectorsMatchingIDString(OVERLAY_ID_PREFIX[t]));
+          if (bonds.length > 0) {
+            dispatch(addVectors(bondsToVectors(bonds, OVERLAY_ID_PREFIX[t])));
+          }
+        }
+        repaint();
+        return { ok: true, counts };
+      } catch (e: any) {
+        return { ok: false, error: String(e?.message || e) };
+      }
+    },
+    async hideInteractions(types?: InteractionType[]) {
+      const list = types ?? ["hbond", "salt", "disulfide", "clash"];
+      for (const t of list) dispatch(removeVectorsMatchingIDString(OVERLAY_ID_PREFIX[t]));
+      repaint();
+      return { ok: true };
     },
 
     // PyKeko v0.3 — saved-selection management.

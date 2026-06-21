@@ -558,6 +558,17 @@ export function flattenMolecule(mol: any): AtomRec[] {
                 for (let ai = 0; ai < atomsSize; ai++) {
                     const atom = atoms.get(ai);
                     const pos = atom.pos;
+                    const elemHandle = atom.element;
+                    // Moorhen exposes Element via a helper that converts to a string.
+                    // `atom.element` itself is an embind handle; reading `.name` on it
+                    // doesn't give the symbol the way you'd expect.
+                    const elementStr: string = (() => {
+                        try {
+                            const mod = (window as any).CCP4Module;
+                            if (mod?.getElementNameAsString) return String(mod.getElementNameAsString(elemHandle) || "");
+                        } catch (e) { /* fall through */ }
+                        return "";
+                    })();
                     out.push({
                         molNo: mol.molNo,
                         molName: mol.name,
@@ -566,7 +577,7 @@ export function flattenMolecule(mol: any): AtomRec[] {
                         insCode,
                         resName,
                         atomName: atom.name,
-                        element: atom.element?.name || "",
+                        element: elementStr,
                         altConf: atom.altloc || "",
                         occ: atom.occ,
                         b: atom.b_iso,
@@ -575,6 +586,7 @@ export function flattenMolecule(mol: any): AtomRec[] {
                         moleculeKey: mol.molNo,
                     });
                     pos.delete?.();
+                    elemHandle?.delete?.();
                     atom.delete?.();
                 }
                 atoms.delete?.();
