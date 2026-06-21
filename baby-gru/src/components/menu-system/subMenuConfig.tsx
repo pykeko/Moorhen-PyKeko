@@ -617,6 +617,14 @@ export const subMenuMap: SubMenuMap = {
         label: "View",
         items: [
             {
+                id: "quick-views",
+                label: "Quick views...",
+                type: "popover",
+                keywords: ["hide", "show", "solvent", "water", "hydrogen", "pocket", "preset", "view"],
+                description: "Hide solvent / hide hydrogens / show only pocket / reset",
+                content: MenuItems.QuickViewsMenuItem,
+            },
+            {
                 id: "interactions",
                 label: "Interactions...",
                 type: "popover",

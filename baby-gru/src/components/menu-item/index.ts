@@ -33,6 +33,7 @@ export { UndoMenuItem, RedoMenuItem } from "./UndoRedoMenuItem";
 export { SelectionsMenuItem } from "./SelectionsMenuItem";
 export { InteractionsMenuItem } from "./InteractionsMenuItem";
 export { SymmetryMenuItem } from "./SymmetryMenuItem";
+export { QuickViewsMenuItem } from "./QuickViewsMenuItem";
 export { ImportMap } from "./ImportMap";
 export { ImportMapCoefficients } from "./ImportMapCoefficients";
 export { LayoutSettings } from "./LayoutSettings";

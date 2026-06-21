@@ -66,6 +66,7 @@ import {
     setUseOffScreenBuffers,
 } from "../store/sceneSettingsSlice";
 import { MoorhenVector, addVector, emptyVectors } from "../store/vectorsSlice";
+import { replaceSavedSelections } from "../store/savedSelectionsSlice";
 import { webGL } from "../types/mgWebGL";
 import { moorhen } from "../types/moorhen";
 import { ColourRule } from "./MoorhenColourRule";
@@ -187,6 +188,14 @@ export type backupSession = {
         scriptingMode?: string;
         seenHintVersion?: string;
     };
+    // PyKeko v0.3: saved selections from the savedSelectionsSlice. Each
+    // entry round-trips name + expression (+ optional note); absent or
+    // empty on upstream / older sessions.
+    pykekoSavedSelections?: Array<{
+        name: string;
+        expression: string;
+        note?: string;
+    }>;
 };
 
 export type Overlay2DSessionData = {
@@ -634,6 +643,26 @@ export class MoorhenTimeCapsule {
             };
         } catch { /* no-op — backward compat with absence */ }
 
+        // PyKeko v0.3: harvest saved selections from the savedSelectionsSlice
+        // so they travel with the .pykeko session. Each entry is the literal
+        // expression -- not pre-resolved CIDs -- so a saved selection like
+        // "byres polymer within 5 of organic" stays meaningful even if the
+        // model shape changes between save and restore.
+        let pykekoSavedSelections: any[] = [];
+        try {
+            const st = (this.store as any)?.getState?.();
+            const byName = st?.savedSelections?.byName || {};
+            for (const sel of Object.values(byName) as any[]) {
+                if (sel && typeof sel.name === "string" && typeof sel.expression === "string") {
+                    pykekoSavedSelections.push({
+                        name: sel.name,
+                        expression: sel.expression,
+                        note: sel.note || "",
+                    });
+                }
+            }
+        } catch { /* no-op -- absent on old sessions */ }
+
         const session: backupSession = {
             includesAdditionalMapData: includeAdditionalMapData,
             moleculeData: moleculeData,
@@ -645,6 +674,7 @@ export class MoorhenTimeCapsule {
             overlay2dData: overlay2dData,
             vectorData: vectorData,
             pykekoUiState: pykekoUiState,
+            pykekoSavedSelections: pykekoSavedSelections,
         };
 
         return session;
@@ -1100,6 +1130,22 @@ export class MoorhenTimeCapsule {
             sessionData.vectorData.forEach(d => {
                 dispatch(addVector(d));
             });
+        }
+
+        // PyKeko v0.3: restore saved selections from the session blob.
+        // Builds the byName map and bulk-replaces -- older sessions without
+        // the field leave the current store untouched (clearing them on every
+        // upstream-session load would be hostile).
+        if (sessionData.pykekoSavedSelections && Array.isArray(sessionData.pykekoSavedSelections)) {
+            const byName: Record<string, { name: string; expression: string; note?: string }> = {};
+            for (const sel of sessionData.pykekoSavedSelections) {
+                if (sel && typeof sel.name === "string" && typeof sel.expression === "string") {
+                    byName[sel.name] = { name: sel.name, expression: sel.expression, note: sel.note || "" };
+                }
+            }
+            if (Object.keys(byName).length > 0) {
+                dispatch(replaceSavedSelections(byName));
+            }
         }
 
         // Load 2D canvas overlays

@@ -278,6 +278,17 @@ message PyKekoUiState {
   string seenHintVersion = 4;
 }
 
+// PyKeko v0.3: saved selection-algebra expressions. Each entry is a
+// (name, expression) pair; the expression is re-parsed and re-evaluated
+// against the *current* loaded structure, so the underlying CIDs follow
+// whatever the structure looks like at restore time -- saved selections
+// stay meaningful across rebuilds.
+message PyKekoSavedSelection {
+  string name = 1;
+  string expression = 2;
+  string note = 3;
+}
+
 message Session {
   string version = 1;
   bool includesAdditionalMapData = 2;
@@ -289,4 +300,6 @@ message Session {
   optional Overlay2DSessionData overlay2dData = 8;
   repeated MoorhenVector vectorData = 9;
   optional PyKekoUiState pykekoUiState = 10;
+  // PyKeko v0.3: saved selections from the savedSelectionsSlice.
+  repeated PyKekoSavedSelection pykekoSavedSelections = 11;
 }
