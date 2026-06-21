@@ -258,24 +258,26 @@ export function unitCellBoxVectors(mol: any): any[] {
             xTo:   corners[b][0], yTo:   corners[b][1], zTo:   corners[b][2],
             cidFrom: "", cidTo: "", molFromUniqueId: "", molToUniqueId: "",
             uniqueId: `${PREFIX_CELL}-edge-${i}`,
-            vectorColour: { r: 0.55, g: 0.85, b: 1.0 },
-            textColour: { r: 1, g: 1, b: 1 },
+            // 0-255 -- Moorhen's vectorsDraw.ts divides by 256 internally.
+            vectorColour: { r: 140, g: 220, b: 255 },
+            textColour: { r: 255, g: 255, b: 255 },
             radius: 0.04,
         });
     }
     return out;
 }
 
-// Distinct colours for sym mates (cycle).
+// Distinct colours for sym mates (cycle). 0-255 (see comment in
+// unitCellBoxVectors above).
 const SYM_PALETTE = [
-    { r: 1.0, g: 0.40, b: 0.40 },
-    { r: 0.40, g: 1.0, b: 0.50 },
-    { r: 1.0, g: 0.80, b: 0.30 },
-    { r: 0.70, g: 0.55, b: 1.0 },
-    { r: 1.0, g: 0.55, b: 0.85 },
-    { r: 0.40, g: 0.85, b: 1.0 },
-    { r: 0.95, g: 0.95, b: 0.55 },
-    { r: 0.55, g: 1.0, b: 0.85 },
+    { r: 255, g: 100, b: 100 },
+    { r: 100, g: 255, b: 130 },
+    { r: 255, g: 200, b: 75  },
+    { r: 180, g: 140, b: 255 },
+    { r: 255, g: 140, b: 220 },
+    { r: 100, g: 215, b: 255 },
+    { r: 240, g: 240, b: 140 },
+    { r: 140, g: 255, b: 220 },
 ];
 
 export function symMateTraceVectors(mate: SymMate, idSuffix: string): any[] {
@@ -307,7 +309,7 @@ export function symMateTraceVectors(mate: SymMate, idSuffix: string): any[] {
                 cidFrom: "", cidTo: "", molFromUniqueId: "", molToUniqueId: "",
                 uniqueId: `${PREFIX_SYM}-${idSuffix}-${i++}`,
                 vectorColour: colour,
-                textColour: { r: 1, g: 1, b: 1 },
+                textColour: { r: 255, g: 255, b: 255 },
                 radius: 0.05,
             });
         }

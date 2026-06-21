@@ -306,11 +306,14 @@ export interface OverlayStyle {
     label: boolean;
 }
 
+// Colour values are 0-255 -- Moorhen's vectorsDraw.ts divides them by 256
+// when uploading to the WebGL uniform, so 0-1 values render near-black.
+// (Cross-check: MoorhenXPIDList uses { r: 255, g: 0, b: 0 } for red vectors.)
 const STYLES: Record<InteractionType, OverlayStyle> = {
-    hbond:     { drawMode: "dashedcylinder", color: { r: 1.0, g: 0.85, b: 0.20 }, radius: 0.04, label: false },
-    salt:      { drawMode: "cylinder",        color: { r: 0.40, g: 0.55, b: 1.0 },  radius: 0.06, label: false },
-    disulfide: { drawMode: "cylinder",        color: { r: 1.0, g: 0.85, b: 0.10 }, radius: 0.08, label: false },
-    clash:     { drawMode: "cylinder",        color: { r: 1.0, g: 0.20, b: 0.40 }, radius: 0.06, label: true  },
+    hbond:     { drawMode: "dashedcylinder", color: { r: 255, g: 215, b: 50  }, radius: 0.04, label: false },
+    salt:      { drawMode: "cylinder",        color: { r: 100, g: 140, b: 255 }, radius: 0.06, label: false },
+    disulfide: { drawMode: "cylinder",        color: { r: 255, g: 215, b: 25  }, radius: 0.08, label: false },
+    clash:     { drawMode: "cylinder",        color: { r: 255, g: 50,  b: 100 }, radius: 0.06, label: true  },
 };
 
 // Build MoorhenVector entries for a batch of bonds. uniqueId prefix lets
