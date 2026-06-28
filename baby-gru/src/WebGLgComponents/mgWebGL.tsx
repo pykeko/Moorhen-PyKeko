@@ -7122,7 +7122,11 @@ export class MGWebGL extends React.Component implements webGL.MGWebGL {
                     // This makes pure-z rotations (which happen near the
                     // rim) feel less abrupt without preventing them entirely.
                     theta = theta / (1.0 + Math.abs(axis[2]));
-                    // PyMOL flips the z component of the axis before applying.
+                    // PyMOL flips the z component of the axis before applying
+                    // (see SceneMouse.cpp ~line 1875). Restored after the
+                    // 2026-06-28 "rotation inverted" report -- the
+                    // negate-theta hypothesis was wrong; original PyMOL-exact
+                    // direction was correct.
                     axis[2] = -axis[2];
 
                     // User-facing mouse-sensitivity slider: scales the
