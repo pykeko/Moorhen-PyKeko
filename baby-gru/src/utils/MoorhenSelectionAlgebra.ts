@@ -123,13 +123,34 @@ function tokenize(src: string): Token[] {
         if (c === ">") { out.push({ t: "op", v: ">" }); i++; continue; }
         if (c === "<") { out.push({ t: "op", v: "<" }); i++; continue; }
         if (c === "=") { out.push({ t: "op", v: "=" }); i++; continue; }
-        // Number / number-list / range
+        // Number / number-list / range / digit-leading identifier
         // Handle leading digit specially: if it's a `digit (- or +) digit`
         // pattern we want a list/range token, not a "num followed by negative num".
+        // If a digit sequence is followed by alpha characters (e.g. `6ZV`,
+        // `2HOH`), treat the whole thing as a string identifier -- PDB
+        // ligand codes can start with a digit, and `resn 6ZV` should not
+        // lex as `num(6) id(ZV)`.
         if (/[\d.]/.test(c)) {
             const numMatch = s.slice(i).match(/^\d+(?:\.\d+)?/);
             if (numMatch) {
                 const after = s[i + numMatch[0].length];
+                // Digit-leading identifier: `\d+[A-Za-z][A-Za-z0-9_]*`
+                if (after && /[A-Za-z_]/.test(after)) {
+                    const idMatch = s.slice(i).match(/^\d+[A-Za-z_][A-Za-z0-9_]*/);
+                    if (idMatch) {
+                        let rest = idMatch[0];
+                        i += idMatch[0].length;
+                        // If followed by + (list separator), collect more parts.
+                        while (s[i] === "+") {
+                            rest += s[i]; i++;
+                            const next = s.slice(i).match(/^[A-Za-z0-9_]+/);
+                            if (!next) break;
+                            rest += next[0]; i += next[0].length;
+                        }
+                        out.push({ t: "list", v: rest.split("+") });
+                        continue;
+                    }
+                }
                 if (after === "+" || (after === "-" && /\d/.test(s[i + numMatch[0].length + 1] || ""))) {
                     // Range or list -- lex the whole thing as composite list token
                     let rest = numMatch[0];

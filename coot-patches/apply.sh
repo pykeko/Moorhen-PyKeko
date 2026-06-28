@@ -38,9 +38,11 @@ if ! grep -q "set_phi_psi" api/molecules-container.hh; then
     grep -q "set_phi_psi" api/molecules-container.hh || { echo "ERROR: failed to insert set_phi_psi decl"; exit 1; }
 fi
 
-# Apply the userdef-colour CID-selector fix (v0.2.18) on coot-molecule-bonds.cc
-if ! grep -q "PyKeko patch (selector fix)" api/coot-molecule-bonds.cc; then
-    patch -p4 --no-backup-if-mismatch < "$SCRIPT_DIR/coot-molecule-bonds-userdef-color-cid-fix.patch" || exit 1
+# Apply the userdef-colour CID-selector fix (v0.2.18 → v0.3.1) on coot-molecule-bonds.cc.
+# Marker grep is permissive ("PyKeko patch") so both the v0.2.18 whole-chain
+# variant and the v0.3.1 generalised CID-matcher variant are detected.
+if ! grep -q "PyKeko patch" api/coot-molecule-bonds.cc; then
+    patch -p1 --no-backup-if-mismatch < "$SCRIPT_DIR/coot-molecule-bonds-userdef-color-cid-fix.patch" || exit 1
 fi
 
 # Declare make_covalent_link + delete_covalent_link on coot::molecule_t

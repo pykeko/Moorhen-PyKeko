@@ -1,37 +1,24 @@
+diff --git a/api/coot-molecule-bonds.cc b/api/coot-molecule-bonds.cc
+index 11c0e03e..e9fc64a8 100644
 --- a/api/coot-molecule-bonds.cc
 +++ b/api/coot-molecule-bonds.cc
-@@ -148,28 +148,71 @@
+@@ -24,6 +24,10 @@
+ 
+ #include <iostream>
+ #include <iomanip>
++#include <set>      // PyKeko v0.3.1: std::set for CID-matcher atom-name table
++#include <vector>   // PyKeko v0.3.1: std::vector for CID-matcher ranges/specs
++#include <utility>  // PyKeko v0.3.1: std::pair for residue ranges
++#include <cstdlib>  // PyKeko v0.3.1: std::atoi for residue-spec parsing
+ 
+ #define GLM_ENABLE_EXPERIMENTAL
+ #include <glm/glm.hpp>
+@@ -148,28 +152,168 @@ coot::molecule_t::apply_user_defined_atom_colour_selections(const std::vector<st
              int colour_index = rc.second; // change type
              int selHnd = mol->NewSelection(); // d
  
-+            // ====== PyKeko patch (selector fix) ======
-+            // mmdb-side CID parser handles Moorhen-shorthand CIDs ("//A",
-+            // "/1/A/*/*" etc.) incorrectly — every form resolves to atoms
-+            // in the same single chain regardless of which chain ID is
-+            // spelled, making user-defined colour rules effectively inert
-+            // when more than one chain is involved. CDP-verified with 13
-+            // CID variants in 7sj3: all coloured chain B. Bypass mmdb for
-+            // whole-chain CIDs by walking the model manually; fall back to
-+            // mmdb only when residue-/atom-level CID hints are present.
-+            auto pykeko_extract_chain_id = [](const std::string &c) -> std::string {
-+                if (c.empty() || c[0] != '/') return "";
-+                std::vector<std::string> toks;
-+                std::string cur;
-+                for (char ch : c) {
-+                    if (ch == '/') { toks.push_back(cur); cur.clear(); }
-+                    else cur += ch;
-+                }
-+                if (!cur.empty()) toks.push_back(cur);
-+                if (toks.size() < 3) return "";
-+                const std::string &chain_tok = toks[2];
-+                if (chain_tok == "*" || chain_tok.empty()) return "";
-+                for (size_t i = 3; i < toks.size(); ++i)
-+                    if (toks[i] != "*" && !toks[i].empty()) return "";
-+                return chain_tok;
-+            };
-+            std::string pykeko_chain = pykeko_extract_chain_id(cid);
-             mmdb::Atom **SelAtoms = nullptr;
-             int nSelAtoms = 0;
+-            mmdb::Atom **SelAtoms = nullptr;
+-            int nSelAtoms = 0;
 -            mol->Select(selHnd, mmdb::STYPE_ATOM, cid.c_str(), mmdb::SKEY_NEW);
 -            mol->GetSelIndex(selHnd, SelAtoms, nSelAtoms);
 -            if (nSelAtoms > 0) {
@@ -50,43 +37,168 @@
 -                     }
 -                  }
 -               }
++            // ====== PyKeko patch (CID-selector fix, v0.3.1) ======
++            // mmdb-side CID parser handles Moorhen-shorthand CIDs ("//A",
++            // "/1/A/*/*", "//A/911", "//A/911-915", "//A/911/SG",
++            // "//A/911/*||//B/908/*" etc.) incorrectly -- every form
++            // resolves to atoms in the wrong subset, making user-defined
++            // colour rules effectively inert on anything narrower than a
++            // single whole chain. v0.2.18 patched the whole-chain case
++            // only; v0.3.1 generalises to ALL CID shapes by walking the
++            // model manually with our own CID matcher and bypassing mmdb's
++            // Select entirely. The matcher handles:
++            //   - compound "||"-joined CIDs (split and union)
++            //   - "*" wildcard at any slot
++            //   - residue-range specs ("911", "911-915", "911+920",
++            //     "100-200+205-210")
++            //   - atom-name lists ("CA", "CA+CB+CG")
++            //   - optional ":<altloc>" suffix
++            auto pykeko_split = [](const std::string &s, char sep) -> std::vector<std::string> {
++                std::vector<std::string> out;
++                std::string cur;
++                for (char c : s) { if (c == sep) { out.push_back(cur); cur.clear(); } else cur += c; }
++                out.push_back(cur);
++                return out;
++            };
++            auto pykeko_split_pipe = [](const std::string &s) -> std::vector<std::string> {
++                std::vector<std::string> out;
++                std::string cur;
++                for (size_t i = 0; i < s.size(); ) {
++                    if (i + 1 < s.size() && s[i] == '|' && s[i + 1] == '|') {
++                        out.push_back(cur); cur.clear(); i += 2;
++                    } else { cur += s[i]; i++; }
++                }
++                out.push_back(cur);
++                return out;
++            };
++            auto pykeko_trim = [](std::string s) -> std::string {
++                while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.erase(0, 1);
++                while (!s.empty() && (s.back()  == ' ' || s.back()  == '\t')) s.pop_back();
++                return s;
++            };
++            auto pykeko_parse_res = [&](const std::string &spec) -> std::vector<std::pair<int,int>> {
++                std::vector<std::pair<int,int>> out;
++                if (spec.empty() || spec == "*") return out;
++                for (const auto &chunk : pykeko_split(spec, '+')) {
++                    if (chunk.empty() || chunk == "*") return {};
++                    size_t dash = chunk.find('-', chunk[0] == '-' ? 1 : 0);
++                    int lo, hi;
++                    if (dash == std::string::npos) {
++                        lo = hi = std::atoi(chunk.c_str());
++                    } else {
++                        lo = std::atoi(chunk.substr(0, dash).c_str());
++                        hi = std::atoi(chunk.substr(dash + 1).c_str());
++                        if (hi < lo) std::swap(lo, hi);
++                    }
++                    out.push_back({lo, hi});
++                }
++                return out;
++            };
++            auto pykeko_parse_atom = [&](const std::string &spec) -> std::set<std::string> {
++                std::set<std::string> out;
++                if (spec.empty() || spec == "*") return out;
++                for (const auto &chunk : pykeko_split(spec, '+')) {
++                    if (chunk.empty() || chunk == "*") return {};
++                    out.insert(chunk);
++                }
++                return out;
++            };
++            struct PykekoMatchSpec {
++                bool any_model;
++                int model_no;
++                bool any_chain;
++                std::string chain;
++                std::vector<std::pair<int,int>> res_ranges;
++                std::set<std::string> atom_names;
++                bool any_altloc;
++                std::string altloc;
++            };
++            auto pykeko_parse_one = [&](const std::string &raw) -> PykekoMatchSpec {
++                PykekoMatchSpec ms;
++                ms.any_model = true; ms.model_no = 0;
++                ms.any_chain = true;
++                ms.any_altloc = true;
++                std::string main_cid = raw;
++                size_t colon = raw.find(':');
++                if (colon != std::string::npos) {
++                    main_cid = raw.substr(0, colon);
++                    std::string al = pykeko_trim(raw.substr(colon + 1));
++                    if (!al.empty() && al != "*") { ms.any_altloc = false; ms.altloc = al; }
++                }
++                auto toks = pykeko_split(main_cid, '/');
++                while (toks.size() < 5) toks.push_back("*");
++                const std::string &model_tok = toks[1];
++                const std::string &chain_tok = toks[2];
++                const std::string &res_tok   = toks[3];
++                const std::string &atom_tok  = toks[4];
++                if (!model_tok.empty() && model_tok != "*") {
++                    ms.any_model = false;
++                    ms.model_no = std::atoi(model_tok.c_str());
++                }
++                if (!chain_tok.empty() && chain_tok != "*") {
++                    ms.any_chain = false;
++                    ms.chain = chain_tok;
++                }
++                ms.res_ranges = pykeko_parse_res(res_tok);
++                ms.atom_names = pykeko_parse_atom(atom_tok);
++                return ms;
++            };
++            std::vector<PykekoMatchSpec> pykeko_specs;
++            for (const auto &sub : pykeko_split_pipe(cid)) {
++                std::string trimmed = pykeko_trim(sub);
++                if (trimmed.empty()) continue;
++                pykeko_specs.push_back(pykeko_parse_one(trimmed));
++            }
++            auto pykeko_matches = [&](mmdb::Atom *at, int model_no_atom) -> bool {
++                if (!at) return false;
++                std::string atom_name = pykeko_trim(at->name ? at->name : "");
++                const char *chain_cstr = at->GetChainID();
++                std::string chain_id = chain_cstr ? chain_cstr : "";
++                int res_no = at->GetSeqNum();
++                std::string altloc = at->altLoc ? at->altLoc : "";
++                for (const auto &ms : pykeko_specs) {
++                    if (!ms.any_model && ms.model_no != 0 && ms.model_no != model_no_atom) continue;
++                    if (!ms.any_chain && ms.chain != chain_id) continue;
++                    if (!ms.res_ranges.empty()) {
++                        bool hit = false;
++                        for (const auto &r : ms.res_ranges)
++                            if (res_no >= r.first && res_no <= r.second) { hit = true; break; }
++                        if (!hit) continue;
++                    }
++                    if (!ms.atom_names.empty() && ms.atom_names.count(atom_name) == 0) continue;
++                    if (!ms.any_altloc && ms.altloc != altloc) continue;
++                    return true;
++                }
++                return false;
++            };
 +            std::vector<mmdb::Atom*> pykeko_atoms;
-+            if (!pykeko_chain.empty()) {
-+                for (int imod = 1; imod <= mol->GetNumberOfModels(); ++imod) {
-+                    mmdb::Model *mdl = mol->GetModel(imod);
-+                    if (!mdl) continue;
-+                    int nc = mdl->GetNumberOfChains();
-+                    for (int ic = 0; ic < nc; ++ic) {
-+                        mmdb::Chain *ch = mdl->GetChain(ic);
-+                        if (!ch) continue;
-+                        const char *cid_cstr = ch->GetChainID();
-+                        if (!cid_cstr || pykeko_chain != cid_cstr) continue;
-+                        int nr = ch->GetNumberOfResidues();
-+                        for (int ir = 0; ir < nr; ++ir) {
-+                            mmdb::Residue *r = ch->GetResidue(ir);
-+                            if (!r) continue;
-+                            int na = r->GetNumberOfAtoms();
-+                            for (int ia = 0; ia < na; ++ia) {
-+                                mmdb::Atom *at = r->GetAtom(ia);
-+                                if (at) pykeko_atoms.push_back(at);
-+                            }
++            for (int imod = 1; imod <= mol->GetNumberOfModels(); ++imod) {
++                mmdb::Model *mdl = mol->GetModel(imod);
++                if (!mdl) continue;
++                int nc = mdl->GetNumberOfChains();
++                for (int ic = 0; ic < nc; ++ic) {
++                    mmdb::Chain *ch = mdl->GetChain(ic);
++                    if (!ch) continue;
++                    int nr = ch->GetNumberOfResidues();
++                    for (int ir = 0; ir < nr; ++ir) {
++                        mmdb::Residue *r = ch->GetResidue(ir);
++                        if (!r) continue;
++                        int na = r->GetNumberOfAtoms();
++                        for (int ia = 0; ia < na; ++ia) {
++                            mmdb::Atom *at = r->GetAtom(ia);
++                            if (at && pykeko_matches(at, imod)) pykeko_atoms.push_back(at);
 +                        }
 +                    }
 +                }
-+                nSelAtoms = static_cast<int>(pykeko_atoms.size());
-+            } else {
-+                mol->Select(selHnd, mmdb::STYPE_ATOM, cid.c_str(), mmdb::SKEY_NEW);
-+                mol->GetSelIndex(selHnd, SelAtoms, nSelAtoms);
-             }
-+            for (int iat = 0; iat < nSelAtoms; ++iat) {
-+                mmdb::Atom *at = pykeko_chain.empty() ? SelAtoms[iat] : pykeko_atoms[iat];
++            }
++            for (mmdb::Atom *at : pykeko_atoms) {
 +                std::string element(at->element);
 +                if (element == " C" || colour_applies_to_non_carbon_atoms_also) {
 +                    at->PutUDData(udd_handle, colour_index);
 +                }
-+            }
+             }
              mol->DeleteSelection(selHnd);
-+            // ====== /PyKeko patch ======
++            // ====== /PyKeko patch (v0.3.1) ======
           }
        }
     }
