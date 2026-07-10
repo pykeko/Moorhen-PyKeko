@@ -720,10 +720,19 @@ export function createControlApi(ctx: Ctx) {
       if (!name || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
         return { ok: false, error: "Name must be a bare identifier (letters/digits/underscore, starting with a letter or _)." };
       }
-      // Validate the expression by parsing it before persisting.
+      // Validate the expression by parsing it before persisting. Include the
+      // current saved-selections map so `byres near_lig` and other
+      // saved-name-referencing expressions validate against known names.
+      // Don't include the name we're about to write — that lets an incorrect
+      // self-reference through until first use (matches the create-then-fix
+      // ergonomics of PyMOL's `select` command).
       try {
         const mols = getMolecules();
-        evaluateSelectionOnMolecules(expression, mols, {}); // throws if grammar is wrong
+        const currentSaved = Object.fromEntries(
+          Object.entries(store.getState().savedSelections?.byName || {})
+            .map(([n, s]: [string, any]) => [n, s.expression])
+        );
+        evaluateSelectionOnMolecules(expression, mols, currentSaved); // throws if grammar is wrong
       } catch (e: any) {
         return { ok: false, error: "Expression failed to parse: " + String(e?.message || e) };
       }
