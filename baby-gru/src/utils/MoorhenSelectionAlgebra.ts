@@ -555,10 +555,17 @@ export function evaluate(e: SelExpr, ctx: EvalCtx): Set<number> {
         return out;
     }
     if (e.kind === "and") {
-        // If the right side is a set-level expression (byres/byobj/within),
-        // matches() would throw. Evaluate it fully and intersect.
-        const isSetLevel = (n: SelExpr): boolean =>
-            n.kind === "byres" || n.kind === "byobj" || n.kind === "within";
+        // If the right side is a set-level expression (byres/byobj/within), or
+        // resolves through a `saved` name to one, matches() would throw.
+        // Evaluate it fully and intersect.
+        const isSetLevel = (n: SelExpr): boolean => {
+            if (n.kind === "byres" || n.kind === "byobj" || n.kind === "within") return true;
+            if (n.kind === "saved") {
+                const sub = ctx.saved?.get(n.name);
+                return sub ? isSetLevel(sub) : false;
+            }
+            return false;
+        };
         if (isSetLevel(e.right)) {
             const a = evaluate(e.left, ctx);
             const b = evaluate(e.right, ctx);
@@ -583,6 +590,14 @@ export function evaluate(e: SelExpr, ctx: EvalCtx): Set<number> {
         const out = new Set<number>();
         for (let i = 0; i < ctx.atoms.length; i++) if (!inner.has(i)) out.add(i);
         return out;
+    }
+    if (e.kind === "saved") {
+        // Saved-name resolution at the set level — the referenced expression
+        // may contain byres/byobj/within, in which case matches() would throw.
+        // Recurse through evaluate() with the substituted sub.
+        const sub = ctx.saved?.get(e.name);
+        if (!sub) throw new Error(`Selection: unknown name '${e.name}'`);
+        return evaluate(sub, ctx);
     }
     // Simple per-atom predicate.
     const out = new Set<number>();

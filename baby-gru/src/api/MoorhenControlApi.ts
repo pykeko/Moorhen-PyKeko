@@ -782,6 +782,44 @@ export function createControlApi(ctx: Ctx) {
       }
     },
 
+    // Session round-trip verification verb — encodes the current session to
+    // protobuf bytes (the same bytes a `.pykeko` file would contain), decodes
+    // them back into a Session message, and applies via loadSessionFromProtoMessage
+    // (the same code path File → Open session runs). Returns the pre/post
+    // JSON summaries so a scripted test can diff them without touching disk
+    // or a native dialog.
+    async roundTripSession() {
+      if (!ctx.timeCapsule) return { ok: false, error: "no timeCapsule in ctx" };
+      try {
+        const pre = await ctx.timeCapsule.current.fetchSession(false);
+        const message = moorhensession.Session.create(pre);
+        const bytes = moorhensession.Session.encode(message).finish();
+        const decoded = moorhensession.Session.decode(bytes);
+        const decodedObj = moorhensession.Session.toObject(decoded, {
+          defaults: true, arrays: true, objects: true, longs: String, enums: String, bytes: String,
+        });
+        // Extract summary (parts we care about for the round-trip test)
+        const summary = (s: any) => ({
+          molNames: (s.moleculeData || []).map((m: any) => m.name),
+          reps: (s.moleculeData || []).flatMap((m: any) =>
+            (m.representations || []).map((r: any) => ({ style: r.style, cid: r.cid }))),
+          colourRuleCids: (s.moleculeData || []).flatMap((m: any) =>
+            (m.colourRules || []).map((c: any) => c.cid)),
+          savedSelections: (s.pykekoSavedSelections || []).map((sel: any) => ({
+            name: sel.name, expression: sel.expression, note: sel.note || "",
+          })),
+        });
+        return {
+          ok: true,
+          byteLen: bytes.length,
+          pre: summary(pre),
+          post: summary(decodedObj),
+        };
+      } catch (e: any) {
+        return { ok: false, error: String(e?.message || e), stack: String(e?.stack || "") };
+      }
+    },
+
     async evalJs(src: string) {
       if (typeof src !== "string" || !src.trim()) {
         return { ok: false, error: "empty input" };
