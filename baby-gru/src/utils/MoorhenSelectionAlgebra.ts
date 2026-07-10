@@ -123,6 +123,25 @@ function tokenize(src: string): Token[] {
         if (c === ">") { out.push({ t: "op", v: ">" }); i++; continue; }
         if (c === "<") { out.push({ t: "op", v: "<" }); i++; continue; }
         if (c === "=") { out.push({ t: "op", v: "=" }); i++; continue; }
+        // Wildcard `*`, optionally as part of a `+`-list (e.g. `CA+*`, `*+CB`).
+        // A bare `*` means "match all", handled at parseStringList/parseResi.
+        // `*` inside a list dominates: any list containing `*` is equivalent to
+        // no filter at all, since a wildcard subsumes the other list entries.
+        if (c === "*") {
+            let rest = "*";
+            i++;
+            while (s[i] === "+") {
+                rest += s[i]; i++;
+                const next = s.slice(i).match(/^[A-Za-z0-9_*]+/);
+                if (!next) break;
+                rest += next[0]; i += next[0].length;
+            }
+            // Emit as list — the parser handles a single-item list containing "*"
+            // the same as any other list; parseStringList/parseResi collapse "*"
+            // to an empty match set (= match everything).
+            out.push({ t: "list", v: rest.split("+") });
+            continue;
+        }
         // Number / number-list / range / digit-leading identifier
         // Handle leading digit specially: if it's a `digit (- or +) digit`
         // pattern we want a list/range token, not a "num followed by negative num".
@@ -143,7 +162,7 @@ function tokenize(src: string): Token[] {
                         // If followed by + (list separator), collect more parts.
                         while (s[i] === "+") {
                             rest += s[i]; i++;
-                            const next = s.slice(i).match(/^[A-Za-z0-9_]+/);
+                            const next = s.slice(i).match(/^[A-Za-z0-9_*]+/);
                             if (!next) break;
                             rest += next[0]; i += next[0].length;
                         }
@@ -198,7 +217,7 @@ function tokenize(src: string): Token[] {
                 while (s[i] === "+" || (s[i] === "-" && /[A-Za-z0-9]/.test(s[i + 1] || ""))) {
                     rest += s[i];
                     i++;
-                    const next = s.slice(i).match(/^[A-Za-z0-9]+/);
+                    const next = s.slice(i).match(/^[A-Za-z0-9*]+/);
                     if (!next) break;
                     rest += next[0];
                     i += next[0].length;
@@ -276,7 +295,15 @@ class Parser {
     }
 
     private parseWithin(): SelExpr {
-        const outer = this.parseUnary();
+        // Bare `within R of Y` (no outer given) means `all within R of Y`.
+        // Match PyMOL's convention: distance predicates with no left-hand
+        // selection default to the universe.
+        let outer: SelExpr;
+        if (this.peekKw("within")) {
+            outer = { kind: "all" };
+        } else {
+            outer = this.parseUnary();
+        }
         if (this.eatKw("within")) {
             const numTok = this.eat();
             if (!numTok || numTok.t !== "num") throw new Error("Selection: 'within' needs a numeric radius");
@@ -339,6 +366,11 @@ class Parser {
         else if (t.t === "id" || t.t === "kw") values = [(t.v as string).toUpperCase()];
         else if (t.t === "num") values = [String(t.v)];
         else throw new Error(`Selection: '${kind}' got unexpected token ${JSON.stringify(t)}`);
+        // Wildcard collapse: if any value is `*`, the whole list matches
+        // everything. Return `all` so downstream matching is trivial.
+        // (Empty-values would be interpreted as "no match", not "match all",
+        // so we don't just filter `*` out.)
+        if (values.some(v => v === "*")) return { kind: "all" };
         return { kind, values } as any;
     }
 
@@ -350,6 +382,8 @@ class Parser {
         if (t.t === "num") {
             ranges = [{ from: t.v, to: t.v }];
         } else if (t.t === "list") {
+            // `resi *` (or `resi 100+*`) collapses to match-all.
+            if (t.v.some(v => v === "*")) return { kind: "all" };
             ranges = t.v.map(s => parseRangePart(s)).filter(Boolean) as any;
             if (ranges.length === 0) throw new Error("Selection: 'resi' got non-numeric values");
         } else throw new Error("Selection: 'resi' got " + JSON.stringify(t));
@@ -521,6 +555,17 @@ export function evaluate(e: SelExpr, ctx: EvalCtx): Set<number> {
         return out;
     }
     if (e.kind === "and") {
+        // If the right side is a set-level expression (byres/byobj/within),
+        // matches() would throw. Evaluate it fully and intersect.
+        const isSetLevel = (n: SelExpr): boolean =>
+            n.kind === "byres" || n.kind === "byobj" || n.kind === "within";
+        if (isSetLevel(e.right)) {
+            const a = evaluate(e.left, ctx);
+            const b = evaluate(e.right, ctx);
+            const out = new Set<number>();
+            for (const i of a) if (b.has(i)) out.add(i);
+            return out;
+        }
         const a = evaluate(e.left, ctx);
         const out = new Set<number>();
         for (const i of a) if (matches(e.right, ctx.atoms[i], ctx)) out.add(i);

@@ -756,6 +756,32 @@ export function createControlApi(ctx: Ctx) {
     //   megabytes through IPC. The local REPL receives the same JSON-safe
     //   summary (intentionally — keeps the surface uniform between local
     //   and MCP callers).
+    // PyKeko v0.3.2 — return the current session (serialised to
+    // protobuf bytes, then encoded as a JSON-safe object) so scripted
+    // tests and MCP callers can inspect what would land in a `.pykeko`
+    // file without triggering a native save dialog.
+    //
+    // Returns { ok, session: {molecules, maps, viewData, pykekoSavedSelections,
+    // pykekoUiState, vectorData, overlay2dData, ...}, sizeBytes } or
+    // { ok:false, error }. The session object is the raw JS structure from
+    // MoorhenTimeCapsule.fetchSession(); pass includeAdditionalMapData=false
+    // for a lean read (leaves out the raw MTZ payloads).
+    async getSessionBlob(includeAdditionalMapData = false) {
+      if (!ctx.timeCapsule) {
+        return { ok: false, error: "TimeCapsule not wired into ControlApi ctx" };
+      }
+      try {
+        const session = await ctx.timeCapsule.current.fetchSession(!!includeAdditionalMapData);
+        // Rough size estimate via JSON.stringify — actual protobuf bytes will
+        // be smaller but this is a useful ballpark for the caller.
+        let sizeBytes = 0;
+        try { sizeBytes = JSON.stringify(session).length; } catch (e) {}
+        return { ok: true, session, sizeBytes };
+      } catch (e: any) {
+        return { ok: false, error: String(e?.message || e), stack: String(e?.stack || "") };
+      }
+    },
+
     async evalJs(src: string) {
       if (typeof src !== "string" || !src.trim()) {
         return { ok: false, error: "empty input" };
