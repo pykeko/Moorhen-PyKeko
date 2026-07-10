@@ -1115,14 +1115,27 @@ export class MoleculeRepresentation {
         }
 
         if (cidSelection) {
-            const struct_1 = copyStructureSelection(this.parentMolecule.gemmiStructure, cidSelection);
-            const count_1 = countResiduesInSelection(struct_1);
+            // gemmi's Selection parser throws WebAssembly.Exception on the
+            // compound "||"-joined form produced by our selection algebra
+            // (e.g. `//A/911/*||//B/908/*` for `resn 6ZN` in a two-copy
+            // asymmetric unit). Split into single-CID sub-parts, run the
+            // residue-count preflight on each, and sum. The compound string
+            // is still passed downstream to Coot's M2T pipeline unchanged —
+            // Coot's CompoundSelection parser handles `||` correctly.
+            const subCids = cidSelection.includes("||")
+                ? cidSelection.split("||").map(s => s.trim()).filter(s => s.length > 0)
+                : [cidSelection];
 
-            const struct_2 = copyStructureSelection(struct_1, m2tSelection);
-            const count_2 = countResiduesInSelection(struct_2);
-
-            struct_1.delete();
-            struct_2.delete();
+            let count_1 = 0;
+            let count_2 = 0;
+            for (const sub of subCids) {
+                const struct_1 = copyStructureSelection(this.parentMolecule.gemmiStructure, sub);
+                count_1 += countResiduesInSelection(struct_1);
+                const struct_2 = copyStructureSelection(struct_1, m2tSelection);
+                count_2 += countResiduesInSelection(struct_2);
+                struct_1.delete();
+                struct_2.delete();
+            }
 
             if (count_1 > 0 && count_2 === 0) {
                 m2tSelection = cidSelection;
