@@ -249,6 +249,12 @@ const compileSlots = (node: SelNode): CidSlots[] | null => {
         case "object":
             // Object names are scoped at the molecule level, not the CID — match-all here
             return [{}];
+        case "cid":
+            // Raw CID literals bypass slot compilation — fall back to the
+            // runtime atom-filter path where `evaluateSelectionForMolecule`
+            // uses `cidMatchesAtom`. This costs a bit more per selection but
+            // handles the full mmdb CID shape including `||`, ranges, altlocs.
+            return null;
         default:
             return null;
     }
@@ -308,6 +314,15 @@ const resolveSelection = async (
     }
     const substituted = substituteRegistry(ast, registry);
     const scope = scopeOf(substituted, env, registry);
+
+    // Fastest path: a bare CID literal (`//A/45/CA` etc.) passes through
+    // verbatim so downstream consumers like `distance` / `label` retain
+    // atom granularity. Coalescing to residue level (as the runtime
+    // fallback does) would drop the atom slot and collapse distinct
+    // atoms of the same residue into a single centroid.
+    if (substituted.kind === "cid") {
+        return scope.map(m => ({ molecule: m, cid: (substituted as any).cid }));
+    }
 
     // Fast path: try CID-pure compilation first
     const pureSlots = compileSlots(substituted);

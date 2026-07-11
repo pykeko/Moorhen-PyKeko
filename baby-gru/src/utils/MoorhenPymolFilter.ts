@@ -72,6 +72,67 @@ const isNucleic = (resName: string) => NUCLEIC.has(resName.toUpperCase());
 const isSolvent = (resName: string) => SOLVENT.has(resName.toUpperCase());
 const isMetal = (element: string) => METALS.has(element.toUpperCase());
 
+// ---------- Slash-form CID matching ----------
+
+// Match one slash-form CID like `//A`, `//A/45`, `//A/45/CA`, `/1/A/45`,
+// `//A/40-46/CA+CB`, `//A/45/*:A` (alt-loc suffix). Empty or `*` slot = wildcard.
+const matchOneCid = (cid: string, a: AtomRec): boolean => {
+    // Strip optional `:altloc` suffix
+    let alt: string | null = null;
+    let main = cid;
+    const colon = cid.indexOf(":");
+    if (colon >= 0) { alt = cid.slice(colon + 1); main = cid.slice(0, colon); }
+    // Strip the leading `/` so split yields [model, chain, res, atom].
+    // `//A/45/CA` → after strip `/A/45/CA` → split `["", "A", "45", "CA"]`.
+    // `/1/A/45/CA` → after strip `1/A/45/CA` → split `["1", "A", "45", "CA"]`.
+    // `//A` → after strip `/A` → split `["", "A"]` → pad `["", "A", "", ""]`.
+    if (main.startsWith("/")) main = main.slice(1);
+    const parts = main.split("/");
+    while (parts.length < 4) parts.push("");
+    const [modelTok, chainTok, resTok, atomTok] = parts;
+    const wild = (t: string) => t === "" || t === "*";
+    if (!wild(modelTok)) {
+        const mNum = parseInt(modelTok, 10);
+        // AtomRec doesn't currently carry model number — treat as always model 1
+        if (!isNaN(mNum) && mNum !== 1) return false;
+    }
+    if (!wild(chainTok) && chainTok !== a.chain_id) return false;
+    if (!wild(resTok)) {
+        // Comma or + separated list of tokens; each may be single or `lo-hi`.
+        // Note: AtomRec.res_no comes off gemmi as a STRING like "481"; coerce.
+        const resNoNum = typeof a.res_no === "number" ? a.res_no : parseInt(a.res_no as any, 10);
+        const listSep = resTok.includes(",") ? "," : "+";
+        const chunks = resTok.split(listSep);
+        let matched = false;
+        for (const ch of chunks) {
+            if (ch === "*" || ch === "") { matched = true; break; }
+            const dash = ch.indexOf("-", ch.length > 0 && ch[0] === "-" ? 1 : 0);
+            if (dash < 0) {
+                if (parseInt(ch, 10) === resNoNum) { matched = true; break; }
+            } else {
+                const lo = parseInt(ch.slice(0, dash), 10);
+                const hi = parseInt(ch.slice(dash + 1), 10);
+                if (resNoNum >= Math.min(lo, hi) && resNoNum <= Math.max(lo, hi)) { matched = true; break; }
+            }
+        }
+        if (!matched) return false;
+    }
+    if (!wild(atomTok)) {
+        const atomName = (a.name || "").trim();
+        const listSep = atomTok.includes(",") ? "," : "+";
+        const chunks = atomTok.split(listSep);
+        if (!chunks.some(c => c === "*" || c === atomName)) return false;
+    }
+    if (alt !== null && alt !== "*" && alt !== "" && alt !== (a.alt_loc || "")) return false;
+    return true;
+};
+
+// Match a possibly-compound `||`-joined CID against an atom.
+const cidMatchesAtom = (cid: string, a: AtomRec): boolean => {
+    if (!cid.includes("||")) return matchOneCid(cid, a);
+    return cid.split("||").some(sub => matchOneCid(sub.trim(), a));
+};
+
 // ---------- Atom-level predicate evaluation ----------
 
 const matchPred = (node: SelNode, atom: AtomRec): boolean => {
@@ -155,6 +216,12 @@ const matchPred = (node: SelNode, atom: AtomRec): boolean => {
             // Object names are resolved by the caller before reaching here. If we see
             // one here it means the name didn't resolve to a registered molecule.
             return false;
+        case "cid": {
+            // Slash-form CID literal — parse into per-slot matchers, honour
+            // `||` union and `+`/`-` list/range shorthand at each slot.
+            // Empty slot ("") means wildcard.
+            return cidMatchesAtom(node.cid, atom);
+        }
         // Topology / dist / reducer are handled at the set level, not per-atom
         default:
             return false;

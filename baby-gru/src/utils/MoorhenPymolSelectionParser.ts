@@ -34,13 +34,14 @@ export type SelNode =
     | { kind: "pred_comp"; prop: "b" | "q" | "pc" | "formal_charge"; op: ">" | "<" | ">=" | "<=" | "=" | "<>"; value: number }
     | { kind: "macro"; name: string }
     | { kind: "object"; name: string }
+    | { kind: "cid"; cid: string }
     | { kind: "all" }
     | { kind: "none" };
 
 // ---------- Lexer ----------
 
 type Token = {
-    type: "kw" | "ident" | "number" | "punct" | "string";
+    type: "kw" | "ident" | "number" | "punct" | "string" | "cid";
     value: string;       // for kw: canonical lowercase; for ident: original case
     original?: string;   // original-case source (only set when distinct from value)
     pos: number;
@@ -144,6 +145,19 @@ const tokenize = (src: string): Token[] => {
                 i = j;
                 continue;
             }
+        }
+        // Moorhen-shorthand CID as an atomic selection literal. Any token
+        // starting with `/` is greedily consumed as a single CID that
+        // extends through /-separated segments and, if present, `||`-joined
+        // compound siblings. Examples: `//A`, `//A/45`, `//A/45/CA`,
+        // `/1/A/45/CA`, `//A/40-46/CA+CB`, `//A/45/*||//B/908/*`.
+        if (c === "/") {
+            let j = i;
+            const isCidChar = (ch: string) => /[A-Za-z0-9_.+\-*,()!]/.test(ch) || ch === "/" || ch === "|" || ch === ":";
+            while (j < src.length && isCidChar(src[j])) j++;
+            toks.push({ type: "cid", value: src.slice(i, j), pos: i });
+            i = j;
+            continue;
         }
         if (PUNCT.has(c)) {
             // Two-char compound operators
@@ -351,6 +365,15 @@ class Parser {
             // PyMOL allows `*` as a wildcard for "all"
             if (t.value === "*") return { kind: "all" };
             return { kind: "object", name: t.value };
+        }
+        if (t.type === "cid") {
+            // Slash-form Moorhen CID as an atomic selection literal.
+            // Examples: `//A`, `//A/45/CA`, `/1/A/45`, `//A/40-46/CA+CB`,
+            // `//A/45/*||//B/908/*` — passed downstream verbatim; the
+            // compiler emits `{molecule, cid}` targets without further
+            // parsing (the CID already speaks the target's language).
+            this.eat();
+            return { kind: "cid", cid: t.value };
         }
         throw new Error(`unexpected token "${t.value}" at pos ${t.pos}`);
     }
