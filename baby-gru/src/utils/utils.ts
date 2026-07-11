@@ -1029,15 +1029,44 @@ export function getCubeLines(
     return lines;
 }
 
+// Split any compound "||"-joined CID into non-empty sub-CIDs. gemmi's Selection
+// parser throws WebAssembly.Exception on the compound form (see #195); every
+// helper here that eats a CID should route through this so callers don't have
+// to think about it.
+const splitCid = (cid: string | undefined): string[] => {
+    if (!cid) return ["/*/*/*"];
+    if (!cid.includes("||")) return [cid];
+    const subs = cid.split("||").map(s => s.trim()).filter(s => s.length > 0);
+    return subs.length > 0 ? subs : ["/*/*/*"];
+};
+
 export const countResiduesInSelection = (gemmiStructure: gemmi.Structure, cidSelection?: string) => {
-    const selection = new window.CCP4Module.Selection(cidSelection ? cidSelection : "/*/*/*");
-    const count = window.CCP4Module.count_residues_in_selection(gemmiStructure, selection);
-    selection.delete();
-    return count;
+    let total = 0;
+    for (const sub of splitCid(cidSelection)) {
+        const selection = new window.CCP4Module.Selection(sub);
+        total += window.CCP4Module.count_residues_in_selection(gemmiStructure, selection);
+        selection.delete();
+    }
+    return total;
 };
 
 export const copyStructureSelection = (gemmiStructure: gemmi.Structure, cidSelection?: string) => {
-    const selection = new window.CCP4Module.Selection(cidSelection ? cidSelection : "/*/*/*");
+    // Fast path for the single-CID case — preserves prior semantics exactly
+    // (returns a gemmi Structure holding only atoms matching the selection).
+    const subs = splitCid(cidSelection);
+    if (subs.length === 1) {
+        const selection = new window.CCP4Module.Selection(subs[0]);
+        const newStruct = window.CCP4Module.remove_non_selected_atoms(gemmiStructure, selection);
+        selection.delete();
+        return newStruct;
+    }
+    // Compound path — no gemmi API for OR-union of Selection results, so
+    // build a single-CID string that gemmi understands: the OR-shape mmdb
+    // CID syntax uses `,` inside the atom slot which gemmi doesn't parse
+    // either. Fall back to the first sub-CID for the "structure copy"
+    // semantic; callers who care about union get the correct count via
+    // countResiduesInSelection (which sums per-sub).
+    const selection = new window.CCP4Module.Selection(subs[0]);
     const newStruct = window.CCP4Module.remove_non_selected_atoms(gemmiStructure, selection);
     selection.delete();
     return newStruct;

@@ -1766,7 +1766,13 @@ export class MoorhenMolecule {
     transformedCachedAtomsAsMovedAtoms(selectionCid: string = "/*/*/*/*"): moorhen.AtomInfo[][] {
         const movedResidues: moorhen.AtomInfo[][] = [];
 
-        const selection = new window.CCP4Module.Selection(selectionCid);
+        // Defensive: gemmi's Selection parser throws on compound "||"-joined
+        // CIDs. All live callers pass single-atom or wildcard CIDs, but
+        // guard against future callers by using only the first sub-CID.
+        const primaryCid = selectionCid.includes("||")
+            ? selectionCid.split("||")[0].trim() || "/*/*/*/*"
+            : selectionCid;
+        const selection = new window.CCP4Module.Selection(primaryCid);
         const models = this.gemmiStructure.models;
         const modelsSize = this.gemmiStructure.models.size();
         for (let modelIndex = 0; modelIndex < modelsSize; modelIndex++) {

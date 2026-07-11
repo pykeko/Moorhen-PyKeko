@@ -51,6 +51,7 @@ export type SelExpr =
     | { kind: "resi"; ranges: { from: number; to: number }[] }
     | { kind: "resn"; values: string[] }
     | { kind: "name"; values: string[] }
+    | { kind: "elem"; values: string[] }
     | { kind: "bfactor"; op: CmpOp; value: number }
     | { kind: "occupancy"; op: CmpOp; value: number }
     | { kind: "mol"; molNos: number[] }
@@ -102,7 +103,7 @@ type Token =
 
 const KEYWORDS = new Set([
     "all", "none", "and", "or", "not", "byres", "byobj", "within", "of",
-    "chain", "resi", "resn", "name", "b", "q", "mol",
+    "chain", "resi", "resn", "name", "elem", "element", "b", "q", "mol",
     "polymer", "organic", "solvent", "water", "metals", "hydro",
     "protein", "nucleic",
     "a", "å", // optional "within R A of" / "within R Å of" units
@@ -343,6 +344,9 @@ class Parser {
                 case "chain": return this.parseStringList("chain");
                 case "resn":  return this.parseStringList("resn");
                 case "name":  return this.parseStringList("name");
+                case "elem": case "element":
+                    // PyMOL-standard alias for chemical element (e.g. `elem C`, `elem S`).
+                    return this.parseStringList("elem");
                 case "resi":  return this.parseResi();
                 case "mol":   return this.parseMol();
                 case "b":     return this.parseCmp("bfactor");
@@ -357,7 +361,7 @@ class Parser {
         throw new Error("Selection: unexpected token " + JSON.stringify(t));
     }
 
-    private parseStringList(kind: "chain" | "resn" | "name"): SelExpr {
+    private parseStringList(kind: "chain" | "resn" | "name" | "elem"): SelExpr {
         this.eat(); // consume the keyword
         const t = this.eat();
         if (!t) throw new Error(`Selection: '${kind}' needs a value`);
@@ -491,6 +495,7 @@ function matches(e: SelExpr, a: AtomRec, ctx: EvalCtx): boolean {
         case "resi":  return e.ranges.some(r => a.resNo >= r.from && a.resNo <= r.to);
         case "resn":  return e.values.includes(a.resName.toUpperCase());
         case "name":  return e.values.includes(a.atomName.trim().toUpperCase());
+        case "elem":  return e.values.includes((a.element || "").trim().toUpperCase());
         case "bfactor":    return cmp(e.op, a.b, e.value);
         case "occupancy":  return cmp(e.op, a.occ, e.value);
         case "mol":   return e.molNos.includes(a.molNo);
