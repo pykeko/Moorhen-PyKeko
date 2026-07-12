@@ -372,10 +372,19 @@ export function createControlApi(ctx: Ctx) {
       return { ok: true };
     },
     async runJs(script: string) {
+      // Preserve + summarise the script's return value in the same shape
+      // evalJs uses ({ok, kind, repr}) so the MCP wrapper's declared contract
+      // ("returns the same summary shape as moorhen_eval") is honoured.
+      // Previously discarded the value and returned {ok:true} — every result
+      // JSON-stringified to `{}` at the MCP layer.
       const api = new MoorhenScriptApi(commandCentre, store);
-      await api.exe(script);
-      repaint();
-      return { ok: true };
+      try {
+        const result = await api.exe(script);
+        repaint();
+        return { ok: true, ...summarizeForRepl(result) };
+      } catch (e: any) {
+        return { ok: false, error: String(e?.stack || e?.message || e) };
+      }
     },
     /** Declare a covalent link between a Cys SG atom and a ligand carbon
      * (Cβ) via the v0.2.29+ executor pipeline. Loads the link CIF into
