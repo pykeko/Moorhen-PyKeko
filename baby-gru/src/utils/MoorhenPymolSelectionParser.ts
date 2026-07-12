@@ -97,7 +97,15 @@ const isDigitLedIdent = (src: string, i: number): number => {
     return sawAlpha ? j - i : 0;
 };
 
-const tokenize = (src: string): Token[] => {
+// Diagnostics for chars the tokenizer couldn't classify — populated by
+// tokenize() and surfaced by parseSelection() as console.warn lines. Silent
+// skipping used to bite users in subtle ways: `resi 100..200` truncated to
+// `resi 100`, `chain A%` accepted as `chain A`, and the `/` bug that
+// silently swallowed CID literals until v0.3.5.
+export interface TokenizeResult { toks: Token[]; skipped: { char: string; pos: number }[]; }
+
+const tokenize = (src: string): TokenizeResult => {
+  const skipped: { char: string; pos: number }[] = [];
     const toks: Token[] = [];
     let i = 0;
     while (i < src.length) {
@@ -193,10 +201,14 @@ const tokenize = (src: string): Token[] => {
             i = j;
             continue;
         }
-        // Unrecognised char — skip
+        // Unrecognised char — record the diagnostic and skip past it.
+        // Consecutive-char runs collapse into one entry so a mistyped
+        // `resi 100..200` reports one warning per stray `.` rather than
+        // spamming.
+        skipped.push({ char: c, pos: i });
         i++;
     }
-    return toks;
+    return { toks, skipped };
 };
 
 // ---------- Parser ----------
@@ -428,7 +440,25 @@ class Parser {
  * Parse a PyMOL selection string into an AST. Throws on syntax error.
  */
 export const parseSelection = (src: string): SelNode => {
-    const toks = tokenize(src);
+    const { toks, skipped } = tokenize(src);
+    // Surface any tokenizer-level silent skips as a single warning line so
+    // "why did my selection do nothing" doesn't stay invisible. Consecutive
+    // runs of the same skipped char collapse to reduce noise (a mistyped
+    // `resi 100..200` produces one warning instead of one per stray char).
+    if (skipped.length > 0) {
+        const runs: string[] = [];
+        for (let i = 0; i < skipped.length; i++) {
+            let j = i;
+            while (j + 1 < skipped.length &&
+                   skipped[j + 1].pos === skipped[j].pos + 1 &&
+                   skipped[j + 1].char === skipped[i].char) j++;
+            const count = j - i + 1;
+            const s = skipped[i];
+            runs.push(count === 1 ? `'${s.char}' at pos ${s.pos}` : `'${s.char}' x${count} starting at pos ${s.pos}`);
+            i = j;
+        }
+        console.warn(`[pymol] parser: skipped unrecognized char(s) in "${src.length > 60 ? src.slice(0, 57) + "..." : src}" — ${runs.join(", ")}`);
+    }
     if (toks.length === 0) return { kind: "all" };
     const p = new Parser(toks);
     return p.parseExpr();
