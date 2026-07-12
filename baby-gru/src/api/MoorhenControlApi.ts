@@ -764,8 +764,14 @@ export function createControlApi(ctx: Ctx) {
     // setSelection persists by name (overwriting any existing entry).
     // deleteSelection removes by name. listSelections returns the current map.
     async setSelection(name: string, expression: string, note?: string) {
-      if (!name || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+      if (typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
         return { ok: false, error: "Name must be a bare identifier (letters/digits/underscore, starting with a letter or _)." };
+      }
+      if (typeof expression !== "string") {
+        return { ok: false, error: `Expression must be a string, got ${expression === null ? "null" : typeof expression}.` };
+      }
+      if (!expression.trim()) {
+        return { ok: false, error: "Expression is empty. Pass a selection like 'chain A', 'resn 6ZN', or a saved-selection name." };
       }
       // Validate the expression by parsing it before persisting. Include the
       // current saved-selections map so `byres near_lig` and other
@@ -787,8 +793,12 @@ export function createControlApi(ctx: Ctx) {
       return { ok: true, name, expression };
     },
     async deleteSelection(name: string) {
+      if (typeof name !== "string" || !name.trim()) {
+        return { ok: false, error: `deleteSelection: expected non-empty selection name, got ${name === null ? "null" : typeof name === "string" ? "empty string" : typeof name}.` };
+      }
+      const existed = Object.prototype.hasOwnProperty.call(store.getState().savedSelections?.byName || {}, name);
       dispatch(removeSavedSelection(name));
-      return { ok: true, name };
+      return { ok: true, name, existed };
     },
     async listSelections() {
       return { ok: true, selections: store.getState().savedSelections?.byName || {} };
