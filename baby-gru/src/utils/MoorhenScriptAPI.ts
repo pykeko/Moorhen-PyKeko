@@ -6,6 +6,7 @@ import { addMap } from "../store/mapsSlice";
 import { setOrigin, setZoom, setQuat, setRequestDrawScene, setLightPosition, setAmbient, setSpecular, setDiffuse, setSpecularPower, setFogClipOffset, setFogStart, setFogEnd, setClipStart, setClipEnd, setActiveMolecule, setDraggableMolecule, setDisplayBuffers} from "../store/glRefSlice"
 import { enqueueSnackbar } from "@/store"
 import { addTextOverlay, addSvgPathOverlay, addFracPathOverlay, emptyOverlays} from "../store/overlaysSlice"
+import { addVectors, removeVectorsMatchingIDString } from "../store/vectorsSlice"
 import { setDrawCrosshairs, setDrawScaleBar, setDrawMissingLoops, setDefaultBondSmoothness,
     setDoSSAO, setSsaoRadius, setSsaoBias, setResetClippingFogging, setClipCap, resetSceneSettings, setEdgeDetectNormalScale,
     setDoShadow, setDoSpin,setDepthBlurRadius, setBackgroundColor,
@@ -202,6 +203,8 @@ export class MoorhenScriptApi  {
             setRefinementSelection: setRefinementSelection,
             resetRefinementSettings: resetRefinementSettings,
             enqueueSnackbar: enqueueSnackbar,
+            addVectors: addVectors,
+            removeVectorsMatchingIDString: removeVectorsMatchingIDString,
             store: this.store,
         };
         return env;

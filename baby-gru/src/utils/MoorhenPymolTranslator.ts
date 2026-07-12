@@ -1192,6 +1192,38 @@ const cmdDistance = async (cmd: PymolCommand, env: any, registry: PymolRegistry)
         ]);
         try { gl.updateLabels?.(); gl.drawScene?.(); } catch (e) { /* renderer not ready */ }
     }
+
+    // PyKeko v0.3.6 — persist through .pykeko save/reload by ALSO dispatching a
+    // vector to Redux vectorsSlice. gl.measuredAtoms above is a WebGL-layer
+    // property that the session serializer doesn't touch; H-bond/salt-bridge
+    // overlays survive because they live in vectorsSlice → session.vectorData.
+    // Distance measurements now do the same.
+    //
+    // We give distance vectors a unique-id prefix `pykeko-distance-` so they
+    // can be batch-removed (see cmdHideDistances / session-clear) without
+    // affecting other overlay categories.
+    if (env.dispatch && env.addVectors) {
+        try {
+            const id = name || `distance-${Date.now()}`;
+            env.dispatch(env.addVectors([{
+                coordsMode: "points",
+                labelMode: "custom",
+                labelText: `${d.toFixed(2)} Å`,
+                drawMode: "dashedcylinder",
+                arrowMode: "none",
+                xFrom: a.x, yFrom: a.y, zFrom: a.z,
+                xTo:   b.x, yTo:   b.y, zTo:   b.z,
+                cidFrom: "", cidTo: "",
+                molFromUniqueId: "", molToUniqueId: "",
+                uniqueId: `pykeko-distance-${id}`,
+                vectorColour: { r: 255, g: 255, b: 0 }, // PyMOL default yellow
+                textColour:   { r: 255, g: 255, b: 255 },
+                radius: 0.04,
+            }]));
+        } catch (e) {
+            console.warn(`[pymol:${cmd.lineNo}] distance: failed to dispatch persistent vector:`, e);
+        }
+    }
 };
 
 const cmdPng = async (cmd: PymolCommand, env: any) => {
