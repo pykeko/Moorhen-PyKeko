@@ -65,6 +65,15 @@ export function createControlApi(ctx: Ctx) {
   };
   const requireMol = (molNo?: number) => { const m = molByNo(molNo); if (!m) throw new Error("no molecule loaded"); return m; };
   const requireActiveMap = () => { const m = getActiveMap(); if (!m) throw new Error("no active map — load a map first"); return m; };
+  const requireString = (v: any, arg: string) => {
+    if (typeof v !== "string") throw new Error(`${arg}: expected string, got ${v === null ? "null" : typeof v}`);
+    return v;
+  };
+  const requireCid = (v: any, arg = "cid") => {
+    const s = requireString(v, arg);
+    if (!s.trim()) throw new Error(`${arg}: expected non-empty CID string (e.g. '//A', '//A/10', '/*/A/*/*')`);
+    return s;
+  };
 
   // Re-fetch atoms, redraw representations, repaint the scene (post raw-cootCommand edit).
   const refresh = async (mol: any) => {
@@ -275,6 +284,9 @@ export function createControlApi(ctx: Ctx) {
     },
 
     async setActiveMap(mapMolNo: number) {
+      if (typeof mapMolNo !== "number" || !Number.isFinite(mapMolNo)) {
+        throw new Error(`setActiveMap: expected numeric mapMolNo, got ${mapMolNo === null ? "null" : typeof mapMolNo}`);
+      }
       const map = getMaps().find((m) => m.molNo === mapMolNo);
       if (!map) throw new Error("map not found: " + mapMolNo);
       dispatch(setActiveMap(map));
@@ -283,6 +295,7 @@ export function createControlApi(ctx: Ctx) {
     },
 
     async goToResidue(cid: string, molNo?: number) {
+      requireCid(cid);
       const mol = requireMol(molNo);
       await mol.centreOn(cid, false, true);
       repaint();
@@ -290,6 +303,7 @@ export function createControlApi(ctx: Ctx) {
     },
 
     async refine(cid: string, mode = "TRIPLE", molNo?: number) {
+      requireCid(cid);
       const mol = requireMol(molNo);
       const map = requireActiveMap();
       await map.setActive();
@@ -300,6 +314,7 @@ export function createControlApi(ctx: Ctx) {
     },
 
     async autoFitRotamer(cid: string, molNo?: number) {
+      requireCid(cid);
       const mol = requireMol(molNo);
       const map = requireActiveMap();
       const { chain, resNo, insCode, altConf } = parseCid(cid);
@@ -309,6 +324,7 @@ export function createControlApi(ctx: Ctx) {
     },
 
     async flipPeptide(cid: string, molNo?: number) {
+      requireCid(cid);
       const mol = requireMol(molNo);
       await coot("flipPeptide_cid", [mol.molNo, cid, ""], mol.molNo);
       await refresh(mol);
@@ -316,6 +332,7 @@ export function createControlApi(ctx: Ctx) {
     },
 
     async addTerminalResidue(cid: string, molNo?: number) {
+      requireCid(cid);
       const mol = requireMol(molNo);
       await coot("add_terminal_residue_directly_using_cid", [mol.molNo, cid], mol.molNo);
       await refresh(mol);
@@ -331,6 +348,7 @@ export function createControlApi(ctx: Ctx) {
     },
 
     async deleteCid(cid: string, molNo?: number) {
+      requireCid(cid);
       const mol = requireMol(molNo);
       await coot("delete_using_cid", [mol.molNo, cid, "LITERAL"], mol.molNo);
       await refresh(mol);
@@ -364,6 +382,7 @@ export function createControlApi(ctx: Ctx) {
     // an autonomous CDP-based test loop can iterate on the translator without
     // poking the modal.
     async runPymol(script: string) {
+      requireString(script, "script");
       const api = new MoorhenScriptApi(commandCentre, store);
       // The translator reads videoRecorderRef off env when png/ray are invoked.
       (api as any).videoRecorderRef = ctx.videoRecorderRef;
@@ -377,6 +396,9 @@ export function createControlApi(ctx: Ctx) {
       // ("returns the same summary shape as moorhen_eval") is honoured.
       // Previously discarded the value and returned {ok:true} — every result
       // JSON-stringified to `{}` at the MCP layer.
+      if (typeof script !== "string") {
+        return { ok: false, error: `runJs: expected string script, got ${script === null ? "null" : typeof script}` };
+      }
       const api = new MoorhenScriptApi(commandCentre, store);
       try {
         const result = await api.exe(script);
