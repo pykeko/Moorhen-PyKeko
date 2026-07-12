@@ -1054,7 +1054,7 @@ export class MGWebGL extends React.Component implements webGL.MGWebGL {
         this.draggableMolecule = null;
         this.currentlyDraggedAtom = null;
         this.fogClipOffset = 250.0;
-        this.doPerspectiveProjection = false;
+        this.doPerspectiveProjection = true;
 
         this.shinyBack = true;
         this.backColour = "default";
@@ -3352,7 +3352,10 @@ export class MGWebGL extends React.Component implements webGL.MGWebGL {
                 //FIXME - drawingGBuffers stanza?
                 if(this.doPerspectiveProjection){
                     //FIXME - with  multiviews
-                    mat4.perspective(this.pMatrix, 1.0, 1.0, 100, 1270.0);
+                    // FOV 0.35 rad ≈ 20° matches PyMOL's default `field_of_view`
+                    // and Coot's usual look; the historical 1.0 rad ≈ 57° was
+                    // too wide and made edge atoms feel warped during rotation.
+                    mat4.perspective(this.pMatrix, 0.35, 1.0, 100, 1270.0);
                 } else {
                     const f = this.gl_clipPlane0[3];
                     const b = Math.min(this.gl_clipPlane1[3],this.gl_fog_end);
@@ -3370,7 +3373,8 @@ export class MGWebGL extends React.Component implements webGL.MGWebGL {
                 }
             } else {
                 if(this.doPerspectiveProjection){
-                    mat4.perspective(this.pMatrix, 1.0, this.gl.viewportWidth / this.gl.viewportHeight, 100, 1270.0);
+                    // FOV 0.35 rad ≈ 20° matches PyMOL/Coot. See sibling call above.
+                    mat4.perspective(this.pMatrix, 0.35, this.gl.viewportWidth / this.gl.viewportHeight, 100, 1270.0);
                 } else {
                     const b = Math.min(this.gl_clipPlane1[3],this.gl_fog_end);
                     const f = this.gl_clipPlane0[3];
@@ -7159,11 +7163,14 @@ export class MGWebGL extends React.Component implements webGL.MGWebGL {
                     // rim) feel less abrupt without preventing them entirely.
                     theta = theta / (1.0 + Math.abs(axis[2]));
                     // PyMOL flips the z component of the axis before applying
-                    // (see SceneMouse.cpp ~line 1875). Restored after the
-                    // 2026-06-28 "rotation inverted" report -- the
-                    // negate-theta hypothesis was wrong; original PyMOL-exact
-                    // direction was correct.
+                    // (see SceneMouse.cpp ~line 1875).
                     axis[2] = -axis[2];
+                    // PyKeko v0.3.14 — flip the y-axis component so a rightward
+                    // mouse drag rotates the molecule's right side TOWARD the
+                    // viewer (Coot / user-native convention), not away as
+                    // strict PyMOL does. Vertical drag is unaffected because a
+                    // pure-vertical drag produces an axis in x, not y.
+                    axis[1] = -axis[1];
 
                     // User-facing mouse-sensitivity slider: scales the
                     // resulting angle so the slider still tunes rotation
