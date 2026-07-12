@@ -5719,7 +5719,12 @@ export class MGWebGL extends React.Component implements webGL.MGWebGL {
                     self.labelledAtoms[self.labelledAtoms.length - 1].push(theAtom);
                 } else if (self.keysDown['measure_distances']) {
                     updateLabels = true
-                    if (self.measuredAtoms.length === 0) {
+                    // Pairs semantics (matches the `labels` branch above): once the
+                    // current pair holds 2 atoms it is CLOSED. The next m-click
+                    // starts a fresh pair rather than continuing a chain — otherwise
+                    // 3rd/4th/5th clicks would keep emitting distances 1-2, 2-3, 3-4…
+                    // which is not what atom-pair-distance means.
+                    if (self.measuredAtoms.length === 0 || self.measuredAtoms[self.measuredAtoms.length - 1].length >= 2) {
                         self.measuredAtoms.push([]);
                     }
                     self.measuredAtoms[self.measuredAtoms.length - 1].push(theAtom);
