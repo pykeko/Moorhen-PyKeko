@@ -1161,7 +1161,15 @@ const cmdDistance = async (cmd: PymolCommand, env: any, registry: PymolRegistry)
     const a = await centroidOf(sel1Arg!);
     const b = await centroidOf(sel2Arg!);
     if (a.n === 0 || b.n === 0) {
-        console.warn(`[pymol:${cmd.lineNo}] distance: empty selection`);
+        // Identify which side was empty so users can debug script typos
+        // (e.g. `distance sg_cb, //A/481/SG, //A/481/CB` when res 481 is
+        // ASN, not CYS — SG doesn't exist, sel1 matches 0 atoms).
+        const parts: string[] = [];
+        if (a.n === 0) parts.push(`sel1='${sel1Arg}' matched 0 atoms`);
+        else           parts.push(`sel1='${sel1Arg}' matched ${a.n} atom${a.n === 1 ? "" : "s"}`);
+        if (b.n === 0) parts.push(`sel2='${sel2Arg}' matched 0 atoms`);
+        else           parts.push(`sel2='${sel2Arg}' matched ${b.n} atom${b.n === 1 ? "" : "s"}`);
+        console.warn(`[pymol:${cmd.lineNo}] distance: empty selection — ${parts.join("; ")}`);
         return;
     }
     const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
