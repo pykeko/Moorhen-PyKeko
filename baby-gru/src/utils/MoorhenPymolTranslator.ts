@@ -175,7 +175,10 @@ const scopeOf = (node: SelNode, env: any, registry: PymolRegistry): MoorhenMolec
         } else {
             // Registry miss — fall back to matching by molecule.name (handles
             // cross-script-run cases where this script didn't fetch the object).
-            const byName = allMols.find(m => m.name === name);
+            // Case-insensitive to match PyMOL convention (users typing `1crn`
+            // vs `1CRN` shouldn't matter).
+            const lowerName = name.toLowerCase();
+            const byName = allMols.find(m => m.name?.toLowerCase() === lowerName);
             if (byName) scopedMolNos.add(byName.molNo);
         }
     }

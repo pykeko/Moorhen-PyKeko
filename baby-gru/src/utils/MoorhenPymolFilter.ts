@@ -213,9 +213,14 @@ const matchPred = (node: SelNode, atom: AtomRec): boolean => {
             return false;
         }
         case "object":
-            // Object names are resolved by the caller before reaching here. If we see
-            // one here it means the name didn't resolve to a registered molecule.
-            return false;
+            // Object names are handled at the SCOPE level (scopeOf filters the
+            // molecule list). Per-atom, once we're inside a scoped molecule,
+            // an object-name reference should match every atom (it's a
+            // "this molecule" filter, not an atom-property filter). Returning
+            // false here broke intersections like `1CRN and polymer` — the
+            // per-atom `and` would evaluate object=false, killing the whole
+            // selection even though scopeOf correctly filtered to 1CRN.
+            return true;
         case "cid": {
             // Slash-form CID literal — parse into per-slot matchers, honour
             // `||` union and `+`/`-` list/range shorthand at each slot.

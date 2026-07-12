@@ -122,9 +122,14 @@ const tokenize = (src: string): TokenizeResult => {
         // (PyMOL uses `+` as a list separator: `chain A+B+C`, `resi 5+10`.
         //  We don't fold it into a number.)
         // Digit-led identifier (PDB ids like 1crn)? Check before number.
+        // Preserve original case in `value` — digit-led idents are never
+        // keywords, so no need to canonicalise, and case matters for
+        // object-name scoping (`5L0E and chain A` must match `mol.name`
+        // === "5L0E"; previously lowercased to "5l0e" and silently
+        // no-op'd the scope, falling back to all-mols).
         const identLen = isDigitLedIdent(src, i);
         if (identLen > 0) {
-            toks.push({ type: "ident", value: src.slice(i, i + identLen).toLowerCase(), pos: i });
+            toks.push({ type: "ident", value: src.slice(i, i + identLen), pos: i });
             i += identLen;
             continue;
         }
