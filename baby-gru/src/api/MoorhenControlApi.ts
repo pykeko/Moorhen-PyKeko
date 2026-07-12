@@ -113,8 +113,16 @@ export function createControlApi(ctx: Ctx) {
     },
 
     async loadCoordsFromString(pdbString: string, name = "molecule") {
+      if (typeof pdbString !== "string") throw new Error(`loadCoordsFromString: expected string, got ${pdbString === null ? "null" : typeof pdbString}`);
+      if (!pdbString.trim()) throw new Error("loadCoordsFromString: empty pdb string");
       const mol = new MoorhenMolecule(commandCentre, store, monomerLibraryPath);
       await mol.loadToCootFromString(pdbString, name);
+      const atoms = await liveAtomCount(mol);
+      if (atoms === 0) {
+        // Undo the load — a zero-atom molecule is a parse failure, not a real load.
+        try { await mol.delete(); } catch {}
+        throw new Error(`loadCoordsFromString: file '${name}' parsed to 0 atoms — is the input a valid PDB / mmCIF?`);
+      }
       await mol.fetchIfDirtyAndDraw("CBs");
       dispatch(addMolecule(mol));
       // Keyboard shortcuts (space-jump, drag-atoms) and the eye-icon read
@@ -122,12 +130,18 @@ export function createControlApi(ctx: Ctx) {
       dispatch(showMolecule(mol));
       await mol.centreOn("/*/*/*/*", false, true);
       repaint();
-      return { molNo: mol.molNo, name: mol.name, atomCount: await liveAtomCount(mol) };
+      return { molNo: mol.molNo, name: mol.name, atomCount: atoms };
     },
 
     async loadCoordsFromURL(url: string, name = "molecule") {
+      if (typeof url !== "string" || !url.trim()) throw new Error(`loadCoordsFromURL: expected non-empty URL string, got ${url === null ? "null" : typeof url === "string" ? "empty string" : typeof url}`);
       const mol = new MoorhenMolecule(commandCentre, store, monomerLibraryPath);
       await mol.loadToCootFromURL(url, name);
+      const atoms = await liveAtomCount(mol);
+      if (atoms === 0) {
+        try { await mol.delete(); } catch {}
+        throw new Error(`loadCoordsFromURL: '${url}' parsed to 0 atoms — 404, redirect to HTML, or non-coordinate content?`);
+      }
       await mol.fetchIfDirtyAndDraw("CBs");
       dispatch(addMolecule(mol));
       // Keyboard shortcuts (space-jump, drag-atoms) and the eye-icon read
@@ -135,12 +149,17 @@ export function createControlApi(ctx: Ctx) {
       dispatch(showMolecule(mol));
       await mol.centreOn("/*/*/*/*", false, true);
       repaint();
-      return { molNo: mol.molNo, name: mol.name, atomCount: await liveAtomCount(mol) };
+      return { molNo: mol.molNo, name: mol.name, atomCount: atoms };
     },
 
     async loadMapFromMtz(mtzBase64: string, name = "map", columns?: any) {
+      if (typeof mtzBase64 !== "string" || !mtzBase64.trim()) throw new Error(`loadMapFromMtz: expected non-empty base64 string, got ${mtzBase64 === null ? "null" : typeof mtzBase64 === "string" ? "empty string" : typeof mtzBase64}`);
       const map = new MoorhenMap(commandCentre, store);
-      await map.loadToCootFromMtzData(b64ToUint8(mtzBase64), name, { ...DEFAULT_MTZ_COLUMNS, ...(columns || {}) });
+      let bytes;
+      try { bytes = b64ToUint8(mtzBase64); } catch (e: any) {
+        throw new Error(`loadMapFromMtz: invalid base64 — ${e?.message || e}`);
+      }
+      await map.loadToCootFromMtzData(bytes, name, { ...DEFAULT_MTZ_COLUMNS, ...(columns || {}) });
       dispatch(addMap(map));
       dispatch(setActiveMap(map));
       await map.setActive();
@@ -150,6 +169,7 @@ export function createControlApi(ctx: Ctx) {
     },
 
     async loadMapFromCcp4(mapBase64: string, name = "map", isDifference = false) {
+      if (typeof mapBase64 !== "string" || !mapBase64.trim()) throw new Error(`loadMapFromCcp4: expected non-empty base64 string, got ${mapBase64 === null ? "null" : typeof mapBase64 === "string" ? "empty string" : typeof mapBase64}`);
       const map = new MoorhenMap(commandCentre, store);
       await map.loadToCootFromMapData(b64ToUint8(mapBase64), name, isDifference);
       dispatch(addMap(map));
