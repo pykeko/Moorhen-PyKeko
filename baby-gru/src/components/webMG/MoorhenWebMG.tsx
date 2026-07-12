@@ -17,6 +17,7 @@ import { setQuat, setOrigin, setZoom,
 import { DisplayBuffer } from '../../WebGLgComponents/displayBuffer'
 import { Moorhen2DOverlay } from './Moorhen2DOverlay';
 import { RootState } from '../../store/MoorhenReduxStore';
+import { removeVectorsMatchingIDString } from '../../store/vectorsSlice';
 import { DrawHoverAtom } from './HoverAtom';
 
 
@@ -612,6 +613,10 @@ export const MoorhenWebMG = forwardRef<webGL.MGWebGL, MoorhenWebMGPropsInterface
             glRef.current.measuredAtoms = []
             glRef.current.measurePointsArray = []
             glRef.current.clearMeasureCylinderBuffers()
+            // v0.3.15 — completed distances now live as vectorsSlice vectors
+            // (prefix `pykeko-distance-`), not in measuredAtoms. Clearing the
+            // native measure state alone would orphan them, so remove them too.
+            dispatch(removeVectorsMatchingIDString("pykeko-distance-"))
             glRef.current.drawScene()
         }
     }, [clearLabelsSwitch])

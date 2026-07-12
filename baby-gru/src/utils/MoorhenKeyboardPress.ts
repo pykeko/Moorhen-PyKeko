@@ -614,9 +614,18 @@ export const moorhenKeyPress = (
         return false
     }
 
-    else if (action === 'add_water' && activeMap && !viewOnly && molecules.length > 0) {
-        // Single water at the view crosshairs + single-residue refine.
-        // glRef.origin is the negated atom coordinate of the view centre.
+    else if (action === 'add_water' && !viewOnly && molecules.length > 0) {
+        // "Add water at pointer" — place ONE water at the view centre and leave
+        // it there. glRef.origin is the negated view-centre coordinate.
+        //
+        // v0.3.15 — we deliberately do NOT auto-refine anymore. Refining a lone,
+        // just-placed water with the map term (refine_residues_using_atom_cid,
+        // weight 4000) drags the unrestrained O atom down the density gradient —
+        // measured at ~70 Å from the pointer in testing — so it lands off-screen,
+        // disconnected from the model. The atom WAS added (coot's atom count went
+        // up), it just vanished from view, which read as "w does nothing".
+        // Placement needs no active map; refinement is a separate deliberate step
+        // (sphere refine / the Refine tools).
         const [ox, oy, oz] = originState
         ;(async () => {
             // Prefer the molecule under the cursor / at the view centre, so
@@ -635,20 +644,8 @@ export const moorhenKeyPress = (
                 if (showShortcutToast) dispatch(enqueueSnackbar({ message: "Add water failed", variant: "warning" }))
                 return
             }
-            let refined = true
-            try {
-                await commandCentre.current.cootCommand({
-                    returnType: "status",
-                    command: "refine_residues_using_atom_cid",
-                    commandArgs: [targetMolecule.molNo, cid, "SINGLE", 4000],
-                    changesMolecules: [targetMolecule.molNo],
-                }, true)
-            } catch (e) { refined = false; console.warn("refine after add_water failed:", e) }
             apresEdit(targetMolecule, glRef, dispatch)
-            if (showShortcutToast) dispatch(enqueueSnackbar({
-                message: refined ? `Added water ${cid} + refined` : `Added water ${cid} (refine failed)`,
-                variant: refined ? "info" : "warning",
-            }))
+            if (showShortcutToast) dispatch(enqueueSnackbar({ message: `Added water ${cid}`, variant: "info" }))
         })().catch(err => console.warn("[w] add_water failed:", err))
         return false
     }

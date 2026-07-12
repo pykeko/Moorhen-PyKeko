@@ -1183,32 +1183,15 @@ const cmdDistance = async (cmd: PymolCommand, env: any, registry: PymolRegistry)
         env.dispatch(env.enqueueSnackbar({ message: msg, variant: "info" }));
     }
 
-    // Persistent visual annotation: push a synthetic atom pair into the canvas
-    // measurement system. Uses the centroid coordinates and a representative
-    // sample atom for the label fields.
-    const glRef = (window as any).__moorhen_glRef__;
-    const gl = glRef?.current;
-    if (gl) {
-        const mkAtom = (centroid: typeof a, label: string) => ({
-            x: centroid.x, y: centroid.y, z: centroid.z,
-            charge: 0, tempFactor: 0, element: centroid.sample?.element ?? "X",
-            name: label, res_name: centroid.sample?.res_name ?? "", res_no: centroid.sample?.res_no ?? 0,
-            mol_name: "", serial: 0, has_altloc: false, chain_id: centroid.sample?.chain_id ?? "",
-            label,
-        });
-        if (!Array.isArray(gl.measuredAtoms)) gl.measuredAtoms = [];
-        gl.measuredAtoms.push([
-            mkAtom(a, name ? `${name}.start` : "start"),
-            mkAtom(b, name ? `${name}.end` : "end"),
-        ]);
-        try { gl.updateLabels?.(); gl.drawScene?.(); } catch (e) { /* renderer not ready */ }
-    }
-
-    // PyKeko v0.3.6 — persist through .pykeko save/reload by ALSO dispatching a
-    // vector to Redux vectorsSlice. gl.measuredAtoms above is a WebGL-layer
-    // property that the session serializer doesn't touch; H-bond/salt-bridge
-    // overlays survive because they live in vectorsSlice → session.vectorData.
-    // Distance measurements now do the same.
+    // Persistent visual annotation: dispatch a vector to Redux vectorsSlice.
+    // This vector is the SINGLE renderer for the distance — dashed cylinder +
+    // "X.XX Å" label — and it survives .pykeko save/reload the same way the
+    // H-bond / salt-bridge overlays do (they live in session.vectorData).
+    //
+    // v0.3.15 — we used to ALSO push a synthetic atom pair into the WebGL-layer
+    // gl.measuredAtoms measure system, which drew its own cylinder + a 3-decimal
+    // "X.XXX" label on top of this one (the overlapping-text bug). That native
+    // push is gone; vectorsSlice is now the only source.
     //
     // We give distance vectors a unique-id prefix `pykeko-distance-` so they
     // can be batch-removed (see cmdHideDistances / session-clear) without

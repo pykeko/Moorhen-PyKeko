@@ -5760,6 +5760,15 @@ export class MGWebGL extends React.Component implements webGL.MGWebGL {
                                 textColour:   { r: 255, g: 255, b: 255 },
                                 radius: 0.04,
                             }]));
+                            // v0.3.15 — the dispatched vector is now the single
+                            // renderer for this completed distance (dashed cylinder +
+                            // "X.XX Å" label) AND it persists through save/reload.
+                            // Drop the completed pair from measuredAtoms so the native
+                            // measure system doesn't ALSO draw its own cylinder + the
+                            // 3-decimal "X.XXX" label on top — that double-render was
+                            // the overlapping-text bug. In-progress single atoms stay
+                            // (first-click feedback); only the closed pair is removed.
+                            self.measuredAtoms.pop();
                         } catch (e) { /* renderer teardown; ignore */ }
                     }
                 }
