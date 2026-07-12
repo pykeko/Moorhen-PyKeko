@@ -586,6 +586,12 @@ export function createControlApi(ctx: Ctx) {
     // explicit `savedSelections` arg to override, or to evaluate against
     // a hypothetical map for previewing.
     async evaluateSelection(expr: string, savedSelections?: Record<string, string>) {
+      // Empty / whitespace-only expression: reject clearly instead of silently
+      // returning count=0. An empty selection is almost never intentional —
+      // it usually means a template variable didn't get filled in.
+      if (typeof expr !== "string" || expr.trim() === "") {
+        return { ok: false, error: "Selection: expression is empty. Pass a non-empty selection (e.g. 'chain A', 'resn 6ZN', or a saved-selection name)." };
+      }
       try {
         const mols = getMolecules();
         const saved = savedSelections ?? Object.fromEntries(
