@@ -29,10 +29,11 @@
 // preference.
 
 import { useEffect, useRef } from "react";
-import { useDispatch, useStore } from "react-redux";
+import { useDispatch, useSelector, useStore } from "react-redux";
 import { useTimeCapsule } from "../InstanceManager/hooks";
 import { moorhensession } from "../protobuf/MoorhenSession";
 import { enqueueSnackbar } from "@/store";
+import type { RootState } from "../store/MoorhenReduxStore";
 
 const AUTOSAVE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const RECOVERY_RECENT_MS = 24 * 60 * 60 * 1000; // last 24 h
@@ -43,8 +44,15 @@ export const MoorhenAutosaveManager = () => {
   const timeCapsule = useTimeCapsule();
   const lastSavedByteLenRef = useRef<number>(-1);
   const inFlightRef = useRef<boolean>(false);
+  // Toggle in Preferences → Backups → "Autosave session every 5 minutes"
+  // (backupSettings.enablePykekoAutosave). Null-ish means the preference
+  // hasn't hydrated yet — treat as enabled (matches PreferencesList default).
+  const enabled = useSelector((state: RootState) =>
+    (state.backupSettings as any).enablePykekoAutosave !== false);
 
-  // Recovery toast on startup — one-shot.
+  // Recovery toast on startup — one-shot. Fires even when autosave is
+  // disabled, so a user who turned autosave off later still learns that
+  // an old autosave exists to recover from.
   useEffect(() => {
     const ctrl = (typeof window !== "undefined") ? (window as any).__moorhenControl : null;
     if (!ctrl || typeof ctrl.autosaveList !== "function") return;
@@ -76,6 +84,10 @@ export const MoorhenAutosaveManager = () => {
     const ctrl = (typeof window !== "undefined") ? (window as any).__moorhenControl : null;
     if (!ctrl || typeof ctrl.autosave !== "function") {
       console.debug("[MoorhenAutosaveManager] __moorhenControl.autosave unavailable — skipping");
+      return;
+    }
+    if (!enabled) {
+      console.debug("[MoorhenAutosaveManager] autosave disabled in preferences — skipping");
       return;
     }
 
@@ -125,7 +137,8 @@ export const MoorhenAutosaveManager = () => {
       clearInterval(id);
       clearTimeout(initial);
     };
-  }, [store, timeCapsule]);
+  // Re-arm when the enable toggle flips. Store/timeCapsule refs are stable.
+  }, [store, timeCapsule, enabled]);
 
   return null;
 };

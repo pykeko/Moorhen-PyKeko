@@ -33,6 +33,7 @@ import {
     setMakeBackups,
     setMaxBackupCount,
     setModificationCountBackupThreshold,
+    setEnablePykekoAutosave,
 } from "../../../store/backupSettingsSlice";
 import { setDefaultExpandDisplayCards, setDevMode, setTransparentModalsOnMouseOut, setUseGemmi } from "../../../store/generalStatesSlice";
 import { setElementsIndicesRestrict } from "../../../store/glRefSlice";
@@ -390,6 +391,13 @@ export const PREFERENCES_MAP: { [key: number]: PreferenceEntry } = {
         valueSetter: setElementsIndicesRestrict,
         selector: (state: moorhen.State) => state.glRef.elementsIndicesRestrict,
         defaultValue: false,
+    },
+    // PyKeko v0.3.7 — dialog-free autosave every 5 min to ~/Documents/PyKeko-autosave/
+    52: {
+        label: "enablePykekoAutosave",
+        valueSetter: setEnablePykekoAutosave,
+        selector: (state: moorhen.State) => state.backupSettings.enablePykekoAutosave,
+        defaultValue: true,
     },
 };
 

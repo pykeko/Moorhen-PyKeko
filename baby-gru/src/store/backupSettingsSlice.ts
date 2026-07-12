@@ -5,11 +5,14 @@ const initialState: {
     makeBackups: boolean;
     maxBackupCount: number;
     modificationCountBackupThreshold: number;
+    // PyKeko v0.3.7 — desktop-only autosave to ~/Documents/PyKeko-autosave/
+    enablePykekoAutosave: boolean;
 } = {
     enableTimeCapsule: null,
     makeBackups: null,
     maxBackupCount: null,
     modificationCountBackupThreshold: null,
+    enablePykekoAutosave: null,
 };
 
 const backupSettingsSlice = createSlice({
@@ -36,10 +39,14 @@ const backupSettingsSlice = createSlice({
         setModificationCountBackupThreshold: (state, action: { payload: number; type: string }) => {
             return { ...state, modificationCountBackupThreshold: action.payload };
         },
+        // API — PyKeko v0.3.7
+        setEnablePykekoAutosave: (state, action: { payload: boolean; type: string }) => {
+            return { ...state, enablePykekoAutosave: action.payload };
+        },
     },
 });
 
-export const { setEnableTimeCapsule, setMakeBackups, setMaxBackupCount, setModificationCountBackupThreshold, resetBackupSettings } =
+export const { setEnableTimeCapsule, setMakeBackups, setMaxBackupCount, setModificationCountBackupThreshold, setEnablePykekoAutosave, resetBackupSettings } =
     backupSettingsSlice.actions;
 
 export default backupSettingsSlice.reducer;

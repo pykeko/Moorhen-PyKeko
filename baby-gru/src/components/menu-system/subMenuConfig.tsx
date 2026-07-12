@@ -4,7 +4,7 @@ import React from "react";
 import type { ModalKey } from "@/components/interface-base/ModalBase/ModalsContainer";
 import { setShownControl } from "@/store";
 import { RootState } from "../../store/MoorhenReduxStore";
-import { setMakeBackups } from "../../store/backupSettingsSlice";
+import { setMakeBackups, setEnablePykekoAutosave } from "../../store/backupSettingsSlice";
 import { setDefaultExpandDisplayCards, setDevMode, setTransparentModalsOnMouseOut } from "../../store/generalStatesSlice";
 import { setEnableAtomHovering, setHoveredAtom } from "../../store/hoveringStatesSlice";
 import { setAtomLabelDepthMode } from "../../store/labelSettingsSlice";
@@ -823,6 +823,13 @@ export const subMenuMap: SubMenuMap = {
                 type: "preferenceSwitch",
                 action: setMakeBackups,
                 selector: (state: RootState) => state.backupSettings.makeBackups,
+            },
+            {
+                id: "enable-pykeko-autosave",
+                label: "Autosave session every 5 minutes (~/Documents/PyKeko-autosave/)",
+                type: "preferenceSwitch",
+                action: setEnablePykekoAutosave,
+                selector: (state: RootState) => state.backupSettings.enablePykekoAutosave,
             },
             {
                 id: "shortcut-hovered-atom",
