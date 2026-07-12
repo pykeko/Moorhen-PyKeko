@@ -2143,10 +2143,30 @@ export class MoorhenMolecule {
             return this.cachedGemmiAtoms;
         }
 
+        // Normalise CID for gemmi's Selection parser:
+        //  - `+` as atom-list separator (Moorhen/mmdb convention `//A/45/CA+CB`)
+        //    isn't accepted by gemmi; convert atom-slot `+` to `,`. Coot's own
+        //    parser handles both, but gemmi's is stricter.
+        // Only touch the atom slot (segment 4 after leading `/`), and do the
+        // same on each half of a `||` compound so we don't accidentally
+        // rewrite the compound separator itself.
+        const normaliseCidForGemmi = (raw: string): string => {
+            const parts = raw.split("||");
+            return parts.map(sub => {
+                const segs = sub.split("/");
+                // Standard shape: ["", "", chain, resi, atom] (5 segments for a full atom-CID)
+                if (segs.length >= 5 && segs[4].includes("+")) {
+                    segs[4] = segs[4].replace(/\+/g, ",");
+                }
+                return segs.join("/");
+            }).join("||");
+        };
+        const normCid = normaliseCidForGemmi(cid);
+
         const result: moorhen.AtomInfo[] = [];
         const atomInfoVec = window.CCP4Module.get_atom_info_for_selection(
             this.gemmiStructure,
-            cid,
+            normCid,
             omitExcludedCids ? this.excludedSelections.join("||") : ""
         );
         const atomInfoVecSize = atomInfoVec.size();
