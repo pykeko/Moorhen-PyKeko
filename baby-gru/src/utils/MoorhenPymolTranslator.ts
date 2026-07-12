@@ -1207,7 +1207,7 @@ const cmdDistance = async (cmd: PymolCommand, env: any, registry: PymolRegistry)
             const id = name || `distance-${Date.now()}`;
             env.dispatch(env.addVectors([{
                 coordsMode: "points",
-                labelMode: "custom",
+                labelMode: "middle",
                 labelText: `${d.toFixed(2)} Å`,
                 drawMode: "dashedcylinder",
                 arrowMode: "none",

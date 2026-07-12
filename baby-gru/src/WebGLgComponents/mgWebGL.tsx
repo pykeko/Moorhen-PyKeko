@@ -6,6 +6,7 @@ import * as mat3 from 'gl-matrix/mat3';
 import { moorhen } from "../types/moorhen";
 import { webGL } from "../types/mgWebGL";
 import { setIsWebGL2, setGLCtx, setDisplayBuffers, setCanvasSize, setRttFramebufferSize } from "../store/glRefSlice"
+import { addVectors } from "../store/vectorsSlice"
 import { parseAtomInfoLabel, guid, get_grid , gemmiAtomPairsToCylindersInfo } from '../utils/utils';
 import  { unProject } from './GLU.js';
 
@@ -5722,6 +5723,36 @@ export class MGWebGL extends React.Component implements webGL.MGWebGL {
                         self.measuredAtoms.push([]);
                     }
                     self.measuredAtoms[self.measuredAtoms.length - 1].push(theAtom);
+                    // PyKeko v0.3.8 — when the pair is complete, ALSO dispatch a
+                    // persistent vector to vectorsSlice. Same fix pattern as the
+                    // scripted `distance` command in v0.3.6: gl.measuredAtoms is
+                    // WebGL-layer state that session-save doesn't touch; the vector
+                    // dispatch is what makes interactively-drawn distances survive
+                    // a .pykeko save/reload alongside their auto-drawn sibling
+                    // (interaction overlays, sym-mate traces).
+                    const pair = self.measuredAtoms[self.measuredAtoms.length - 1];
+                    if (pair.length === 2) {
+                        const a = pair[0], b = pair[1];
+                        const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+                        const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                        try {
+                            self.store.dispatch(addVectors([{
+                                coordsMode: "points",
+                                labelMode: "middle",
+                                labelText: `${dist.toFixed(2)} Å`,
+                                drawMode: "dashedcylinder",
+                                arrowMode: "none",
+                                xFrom: a.x, yFrom: a.y, zFrom: a.z,
+                                xTo:   b.x, yTo:   b.y, zTo:   b.z,
+                                cidFrom: "", cidTo: "",
+                                molFromUniqueId: "", molToUniqueId: "",
+                                uniqueId: `pykeko-distance-mclick-${Date.now()}`,
+                                vectorColour: { r: 255, g: 255, b: 0 },
+                                textColour:   { r: 255, g: 255, b: 255 },
+                                radius: 0.04,
+                            }]));
+                        } catch (e) { /* renderer teardown; ignore */ }
+                    }
                 }
             }
             if(updateLabels) self.updateLabels()
