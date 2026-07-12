@@ -626,7 +626,17 @@ export function createControlApi(ctx: Ctx) {
     }) {
       try {
         const mols = getMolecules();
-        const types = opts?.types ?? ["hbond", "salt", "disulfide", "clash"];
+        const VALID: InteractionType[] = ["hbond", "salt", "disulfide", "clash"];
+        const requested = opts?.types ?? VALID;
+        // Validate + drop invalid entries with a warning. Previously an unknown
+        // type like "nonesuch" hit line 644 as `detected["nonesuch"]` →
+        // undefined → `.length` threw. Now: unknown types are surfaced in the
+        // error field so MCP callers see them.
+        const unknown = requested.filter(t => !VALID.includes(t));
+        const types = requested.filter(t => VALID.includes(t)) as InteractionType[];
+        if (unknown.length > 0 && types.length === 0) {
+          return { ok: false, error: `Unknown interaction type(s): ${unknown.join(", ")}. Valid: ${VALID.join(", ")}.` };
+        }
         // Collect atoms -- filter by selection if requested.
         let atoms: any[] = [];
         for (const m of mols) atoms.push(...flattenMolecule(m));
