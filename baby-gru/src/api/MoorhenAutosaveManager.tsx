@@ -29,17 +29,46 @@
 // preference.
 
 import { useEffect, useRef } from "react";
-import { useStore } from "react-redux";
+import { useDispatch, useStore } from "react-redux";
 import { useTimeCapsule } from "../InstanceManager/hooks";
 import { moorhensession } from "../protobuf/MoorhenSession";
+import { enqueueSnackbar } from "@/store";
 
 const AUTOSAVE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const RECOVERY_RECENT_MS = 24 * 60 * 60 * 1000; // last 24 h
 
 export const MoorhenAutosaveManager = () => {
   const store = useStore();
+  const dispatch = useDispatch();
   const timeCapsule = useTimeCapsule();
   const lastSavedByteLenRef = useRef<number>(-1);
   const inFlightRef = useRef<boolean>(false);
+
+  // Recovery toast on startup — one-shot.
+  useEffect(() => {
+    const ctrl = (typeof window !== "undefined") ? (window as any).__moorhenControl : null;
+    if (!ctrl || typeof ctrl.autosaveList !== "function") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await ctrl.autosaveList();
+        if (cancelled) return;
+        if (!r?.ok || !r?.entries?.length) return;
+        const newest = r.entries[0];
+        const age = Date.now() - Number(newest.mtimeMs || 0);
+        if (age > RECOVERY_RECENT_MS) return;
+        const mins = Math.max(1, Math.round(age / 60000));
+        dispatch(enqueueSnackbar({
+          message: `Autosave from ${mins} min ago available — File → Recover autosave`,
+          variant: "info",
+          autoHideDuration: 12000,
+        }));
+      } catch (e) {
+        // silent — recovery hint is best-effort
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [dispatch]);
 
   useEffect(() => {
     // Only useful in the desktop wrapper — needs the __moorhenControl bridge

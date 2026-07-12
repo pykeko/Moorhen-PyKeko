@@ -83,6 +83,60 @@ export const ManageSession = () => {
         }
     };
 
+    // Desktop: recover an autosave. Lists ~/Documents/PyKeko-autosave/
+    // newest-first, lets the user pick one, then decodes+applies via the
+    // same protobuf path openSessionDesktop uses.
+    //
+    // MVP UX (v0.3.7): a native chooser rendered as a serial confirm chain
+    // ("Recover autosave from 6 min ago (5L0E, 1.1 MB)?"). Clearer than a
+    // popup listbox for a small number of options and doesn't need any new
+    // React component. Later cycles could replace with a proper listbox.
+    const recoverAutosave = async () => {
+        try {
+            const ctrl = (window as any).__moorhenControl;
+            if (!ctrl?.autosaveList) {
+                dispatch(enqueueSnackbar({ message: "Autosave IPC unavailable", variant: "error" }));
+                return;
+            }
+            const r = await ctrl.autosaveList();
+            if (!r?.ok) {
+                dispatch(enqueueSnackbar({ message: `Autosave list failed: ${r?.error || "unknown"}`, variant: "error" }));
+                return;
+            }
+            const entries = r.entries || [];
+            if (!entries.length) {
+                dispatch(enqueueSnackbar({ message: "No autosaves found in ~/Documents/PyKeko-autosave/", variant: "info" }));
+                return;
+            }
+            // Serial confirm; user can cancel and see the next candidate.
+            for (const e of entries) {
+                const ageMin = Math.max(1, Math.round((Date.now() - Number(e.mtimeMs || 0)) / 60000));
+                const sizeMB = (Number(e.size || 0) / (1024 * 1024)).toFixed(2);
+                const ok = window.confirm(
+                    `Recover this autosave?\n\n` +
+                    `${e.name}\n` +
+                    `${ageMin} min ago · ${sizeMB} MB\n\n` +
+                    `Cancel to see the next candidate.`
+                );
+                if (!ok) continue;
+                const loadR = await ctrl.autosaveLoad(e.path);
+                if (!loadR?.ok) {
+                    dispatch(enqueueSnackbar({ message: `Load failed: ${loadR?.error || "unknown"}`, variant: "error" }));
+                    return;
+                }
+                const bytes = loadR.bytes instanceof Uint8Array ? loadR.bytes : new Uint8Array(loadR.bytes);
+                const sessionMessage = moorhensession.Session.decode(bytes, undefined, undefined);
+                await loadSession(sessionMessage);
+                dispatch(enqueueSnackbar({ message: `Autosave restored (${e.name})`, variant: "success" }));
+                return;
+            }
+            dispatch(enqueueSnackbar({ message: "No autosave selected", variant: "info" }));
+        } catch (e: any) {
+            console.error(e);
+            dispatch(enqueueSnackbar({ message: `Recover failed: ${e?.message || e}`, variant: "error" }));
+        }
+    };
+
     // Desktop: native Open panel returns bytes, we decode + apply via the
     // same path the legacy "Backups" workflow uses.
     const openSessionDesktop = async () => {
@@ -174,6 +228,9 @@ export const ManageSession = () => {
                     </MoorhenMenuItem>
                     <MoorhenMenuItem id="pykeko-open-session" onClick={openSessionDesktop}>
                         Open session…
+                    </MoorhenMenuItem>
+                    <MoorhenMenuItem id="pykeko-recover-autosave" onClick={recoverAutosave}>
+                        Recover autosave…
                     </MoorhenMenuItem>
                 </>
             ) : (
